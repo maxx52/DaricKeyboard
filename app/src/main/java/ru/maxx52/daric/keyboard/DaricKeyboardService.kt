@@ -48,6 +48,8 @@ class DaricKeyboardService : InputMethodService() {
 
     private fun renderKeyboard() {
         keyboardRoot.removeAllViews()
+        addRow(numberRow, isNumberPanel = true)
+
         val rows = when (mode) {
             KeyboardMode.LETTERS -> letterRows
             KeyboardMode.SYMBOLS -> symbolRows
@@ -55,13 +57,22 @@ class DaricKeyboardService : InputMethodService() {
         rows.forEach(::addRow)
     }
 
-    private fun addRow(keys: List<String>) {
-        val isNumberRow = keys == numberRow
-        val keyHeight = if (isNumberRow) 44 else 52
+    private fun addRow(
+        keys: List<String>,
+        isNumberPanel: Boolean = false
+    ) {
+        val keyHeight = if (isNumberPanel) 44 else 52
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
+            if (isNumberPanel) {
+                setPadding(dp(2), dp(2), dp(2), dp(2))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(10).toFloat()
+                    setColor(Color.rgb(216, 209, 232))
+                }
+            }
         }
 
         keys.forEach { key ->
@@ -70,7 +81,7 @@ class DaricKeyboardService : InputMethodService() {
                 gravity = Gravity.CENTER
                 textSize = when {
                     key == "пробел" -> 13f
-                    isNumberRow -> 16f
+                    isNumberPanel -> 16f
                     else -> 18f
                 }
                 isAllCaps = false
@@ -80,7 +91,7 @@ class DaricKeyboardService : InputMethodService() {
                 minimumHeight = 0
                 setPadding(0, 0, 0, 0)
                 setTextColor(Color.parseColor("#241F2E"))
-                background = keyBackground(key)
+                background = keyBackground(key, isNumberPanel)
                 setOnClickListener { handleKey(key) }
             }
 
@@ -97,7 +108,9 @@ class DaricKeyboardService : InputMethodService() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            )
+            ).apply {
+                if (isNumberPanel) bottomMargin = dp(6)
+            }
         )
     }
 
@@ -157,11 +170,19 @@ class DaricKeyboardService : InputMethodService() {
         else -> 1f
     }
 
-    private fun keyBackground(key: String): GradientDrawable {
+    private fun keyBackground(
+        key: String,
+        isNumberPanel: Boolean
+    ): GradientDrawable {
         val special = key in setOf("⇧", "⌫", "?123", "АБВ", "🌐", "↵")
-        val fillColor: Int =
-            if (special) Color.rgb(216, 209, 232) else Color.WHITE
-        val strokeColor: Int = Color.rgb(200, 193, 210)
+        val fillColor: Int = when {
+            isNumberPanel -> Color.rgb(248, 246, 252)
+            special -> Color.rgb(216, 209, 232)
+            else -> Color.WHITE
+        }
+        val strokeColor: Int =
+            if (isNumberPanel) Color.rgb(185, 175, 203)
+            else Color.rgb(200, 193, 210)
 
         return GradientDrawable().apply {
             cornerRadius = dp(9).toFloat()
@@ -177,7 +198,6 @@ class DaricKeyboardService : InputMethodService() {
         val numberRow = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
 
         val letterRows = listOf(
-            numberRow,
             listOf("й", "ц", "у", "к", "е", "н", "г", "ш", "щ", "з", "х", "ъ"),
             listOf("ф", "ы", "в", "а", "п", "р", "о", "л", "д", "ж", "э"),
             listOf("⇧", "я", "ч", "с", "м", "и", "т", "ь", "б", "ю", "⌫"),
@@ -185,7 +205,6 @@ class DaricKeyboardService : InputMethodService() {
         )
 
         val symbolRows = listOf(
-            numberRow,
             listOf("@", "#", "₽", "_", "&", "-", "+", "(", ")", "/"),
             listOf("*", "\"", "'", ":", ";", "!", "?", "⌫"),
             listOf("АБВ", "🌐", ",", "пробел", ".", "↵")
