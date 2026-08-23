@@ -3,8 +3,11 @@ package ru.maxx52.daric.keyboard
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
@@ -17,6 +20,15 @@ class DaricKeyboardService : InputMethodService() {
 
     private lateinit var keyboardRoot: LinearLayout
     private val suggestionButtons = mutableListOf<Button>()
+    private val deleteRepeatHandler = Handler(Looper.getMainLooper())
+    private var deleteRepeated = false
+    private val deleteRepeatAction = object : Runnable {
+        override fun run() {
+            deleteRepeated = true
+            deleteOneCharacter()
+            deleteRepeatHandler.postDelayed(this, DELETE_REPEAT_INTERVAL_MS)
+        }
+    }
     private val russianLocale = Locale("ru", "RU")
     private var mode = KeyboardMode.LETTERS
     private var uppercase = false
@@ -47,6 +59,11 @@ class DaricKeyboardService : InputMethodService() {
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
+
+    override fun onFinishInputView(finishingInput: Boolean) {
+        stopBackspaceRepeat()
+        super.onFinishInputView(finishingInput)
+    }
 
     override fun onUpdateSelection(
         oldSelStart: Int,
@@ -246,7 +263,11 @@ class DaricKeyboardService : InputMethodService() {
                 setPadding(0, 0, 0, 0)
                 setTextColor(Color.parseColor("#241F2E"))
                 background = keyBackground(key, isNumberPanel)
-                setOnClickListener { handleKey(key) }
+                if (key == "⌫") {
+                    configureBackspace(this)
+                } else {
+                    setOnClickListener { handleKey(key) }
+                }
             }
 
             row.addView(
@@ -262,10 +283,48 @@ class DaricKeyboardService : InputMethodService() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                if (isNumberPanel) bottomMargin = dp(6)
-            }
+            )
         )
+    }
+
+    private fun configureBackspace(button: Button) {
+        button.setOnClickListener {
+            if (!deleteRepeated) deleteOneCharacter()
+        }
+        button.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    deleteRepeated = false
+                    view.isPressed = true
+                    deleteRepeatHandler.removeCallbacks(deleteRepeatAction)
+                    deleteRepeatHandler.postDelayed(
+                        deleteRepeatAction,
+                        DELETE_REPEAT_START_DELAY_MS
+                    )
+                    true
+                }
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> {
+                    view.isPressed = false
+                    stopBackspaceRepeat()
+                    view.performClick()
+                    view.post { deleteRepeated = false }
+                    true
+                }
+                else -> true
+            }
+        }
+    }
+
+    private fun stopBackspaceRepeat() {
+        deleteRepeatHandler.removeCallbacks(deleteRepeatAction)
+    }
+
+    private fun deleteOneCharacter() {
+        currentInputConnection?.deleteSurroundingTextInCodePoints(1, 0)
+        if (::keyboardRoot.isInitialized) {
+            keyboardRoot.post { updateSuggestions() }
+        }
     }
 
     private fun displayText(key: String): String =
@@ -292,7 +351,7 @@ class DaricKeyboardService : InputMethodService() {
                 renderKeyboard()
             }
             "🌐" -> switchToNextInputMethod(false)
-            "⌫" -> inputConnection.deleteSurroundingTextInCodePoints(1, 0)
+            "⌫" -> deleteOneCharacter()
             "пробел" -> inputConnection.commitText(" ", 1)
             "↵" -> handleEnter()
             else -> {
@@ -355,6 +414,8 @@ class DaricKeyboardService : InputMethodService() {
     private companion object {
         const val SUGGESTION_COUNT = 3
         const val MAX_CONTEXT_LENGTH = 64
+        const val DELETE_REPEAT_START_DELAY_MS = 350L
+        const val DELETE_REPEAT_INTERVAL_MS = 55L
 
         val blockedSuggestionVariations = setOf(
             InputType.TYPE_TEXT_VARIATION_PASSWORD,
