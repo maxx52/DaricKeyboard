@@ -480,7 +480,7 @@ class DaricKeyboardService : InputMethodService() {
         )
 
         val englishSymbolRows = listOf(
-            listOf("@", "#", "$", "_", "&", "-", "+", "(", ")", "/"),
+            listOf("@", "#", "\$", "_", "&", "-", "+", "(", ")", "/"),
             listOf("*", "\"", "'", ":", ";", "!", "?", "⌫"),
             listOf("ABC", "🌐", ",", "space", ".", "↵")
         )
