@@ -9,7 +9,6 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.TextView
 import java.util.Locale
 
 class DaricKeyboardService : InputMethodService() {
@@ -153,10 +152,14 @@ class DaricKeyboardService : InputMethodService() {
 
     private fun keyBackground(key: String): GradientDrawable {
         val special = key in setOf("⇧", "⌫", "?123", "АБВ", "🌐", "↵")
+        val fillColor: Int =
+            if (special) Color.rgb(216, 209, 232) else Color.WHITE
+        val strokeColor: Int = Color.rgb(200, 193, 210)
+
         return GradientDrawable().apply {
             cornerRadius = dp(9).toFloat()
-            setColor(Color.parseColor(if (special) "#D8D1E8" else "#FFFFFF"))
-            setStroke(dp(1), Color.parseColor("#C8C1D2"))
+            setColor(fillColor)
+            setStroke(dp(1), strokeColor)
         }
     }
 
@@ -174,7 +177,7 @@ class DaricKeyboardService : InputMethodService() {
         val symbolRows = listOf(
             listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
             listOf("@", "#", "₽", "_", "&", "-", "+", "(", ")", "/"),
-            listOf("*", """, "'", ":", ";", "!", "?", "⌫"),
+            listOf("*", "\"", "'", ":", ";", "!", "?", "⌫"),
             listOf("АБВ", "🌐", ",", "пробел", ".", "↵")
         )
     }
