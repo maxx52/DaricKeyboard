@@ -17,6 +17,7 @@ import java.util.Locale
 class DaricKeyboardService : InputMethodService() {
 
     private enum class KeyboardMode { LETTERS, SYMBOLS }
+    private enum class KeyboardLanguage { RUSSIAN, ENGLISH }
 
     private lateinit var keyboardRoot: LinearLayout
     private val suggestionButtons = mutableListOf<Button>()
@@ -30,7 +31,9 @@ class DaricKeyboardService : InputMethodService() {
         }
     }
     private val russianLocale = Locale("ru", "RU")
+    private val englishLocale = Locale.ENGLISH
     private var mode = KeyboardMode.LETTERS
+    private var language = KeyboardLanguage.RUSSIAN
     private var uppercase = false
     private var editorInfo: EditorInfo? = null
 
@@ -96,8 +99,14 @@ class DaricKeyboardService : InputMethodService() {
         addRow(numberRow, isNumberPanel = true)
 
         val rows = when (mode) {
-            KeyboardMode.LETTERS -> letterRows
-            KeyboardMode.SYMBOLS -> symbolRows
+            KeyboardMode.LETTERS -> when (language) {
+                KeyboardLanguage.RUSSIAN -> russianLetterRows
+                KeyboardLanguage.ENGLISH -> englishLetterRows
+            }
+            KeyboardMode.SYMBOLS -> when (language) {
+                KeyboardLanguage.RUSSIAN -> russianSymbolRows
+                KeyboardLanguage.ENGLISH -> englishSymbolRows
+            }
         }
         rows.forEach(::addRow)
         keyboardRoot.post { updateSuggestions() }
@@ -160,9 +169,11 @@ class DaricKeyboardService : InputMethodService() {
             return
         }
 
-        val completions = RussianSuggestionEngine
-            .suggest(prefix.lowercase(russianLocale), limit = 2)
-            .map { applyPrefixCase(prefix, it) }
+        val completions = when (language) {
+            KeyboardLanguage.RUSSIAN -> RussianSuggestionEngine
+                .suggest(prefix.lowercase(russianLocale), limit = 2)
+            KeyboardLanguage.ENGLISH -> emptyList()
+        }.map { applyPrefixCase(prefix, it) }
 
         val candidates = listOf(
             completions.getOrNull(0),
@@ -208,11 +219,19 @@ class DaricKeyboardService : InputMethodService() {
         keyboardRoot.post { updateSuggestions() }
     }
 
-    private fun applyPrefixCase(prefix: String, suggestion: String): String = when {
-        prefix.all(Char::isUpperCase) -> suggestion.uppercase(russianLocale)
-        prefix.firstOrNull()?.isUpperCase() == true ->
-            suggestion.take(1).uppercase(russianLocale) + suggestion.drop(1)
-        else -> suggestion
+    private fun applyPrefixCase(prefix: String, suggestion: String): String {
+        val locale = currentLocale()
+        return when {
+            prefix.all(Char::isUpperCase) -> suggestion.uppercase(locale)
+            prefix.firstOrNull()?.isUpperCase() == true ->
+                suggestion.take(1).uppercase(locale) + suggestion.drop(1)
+            else -> suggestion
+        }
+    }
+
+    private fun currentLocale(): Locale = when (language) {
+        KeyboardLanguage.RUSSIAN -> russianLocale
+        KeyboardLanguage.ENGLISH -> englishLocale
     }
 
     private fun suggestionsAllowed(): Boolean {
@@ -251,7 +270,7 @@ class DaricKeyboardService : InputMethodService() {
                 text = displayText(key)
                 gravity = Gravity.CENTER
                 textSize = when {
-                    key == "пробел" -> 13f
+                    key == "пробел" || key == "space" -> 13f
                     isNumberPanel -> 16f
                     else -> 18f
                 }
@@ -334,7 +353,7 @@ class DaricKeyboardService : InputMethodService() {
 
     private fun displayText(key: String): String =
         if (uppercase && key.length == 1 && key.first().isLetter()) {
-            key.uppercase(russianLocale)
+            key.uppercase(currentLocale())
         } else {
             key
         }
@@ -351,13 +370,20 @@ class DaricKeyboardService : InputMethodService() {
                 mode = KeyboardMode.SYMBOLS
                 renderKeyboard()
             }
-            "АБВ" -> {
+            "АБВ", "ABC" -> {
                 mode = KeyboardMode.LETTERS
                 renderKeyboard()
             }
-            "🌐" -> switchToNextInputMethod(false)
+            "🌐" -> {
+                language = when (language) {
+                    KeyboardLanguage.RUSSIAN -> KeyboardLanguage.ENGLISH
+                    KeyboardLanguage.ENGLISH -> KeyboardLanguage.RUSSIAN
+                }
+                uppercase = false
+                renderKeyboard()
+            }
             "⌫" -> deleteOneCharacter()
-            "пробел" -> inputConnection.commitText(" ", 1)
+            "пробел", "space" -> inputConnection.commitText(" ", 1)
             "↵" -> handleEnter()
             else -> {
                 inputConnection.commitText(displayText(key), 1)
@@ -387,8 +413,8 @@ class DaricKeyboardService : InputMethodService() {
     }
 
     private fun keyWeight(key: String): Float = when (key) {
-        "пробел" -> 4f
-        "⇧", "⌫", "?123", "АБВ" -> 1.45f
+        "пробел", "space" -> 4f
+        "⇧", "⌫", "?123", "АБВ", "ABC" -> 1.45f
         else -> 1f
     }
 
@@ -396,7 +422,7 @@ class DaricKeyboardService : InputMethodService() {
         key: String,
         isNumberPanel: Boolean
     ): GradientDrawable {
-        val special = key in setOf("⇧", "⌫", "?123", "АБВ", "🌐", "↵")
+        val special = key in setOf("⇧", "⌫", "?123", "АБВ", "ABC", "🌐", "↵")
         val fillColor: Int = when {
             isNumberPanel -> Color.rgb(248, 246, 252)
             special -> Color.rgb(216, 209, 232)
