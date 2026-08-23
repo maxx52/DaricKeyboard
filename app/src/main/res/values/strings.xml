@@ -1,3 +1,11 @@
 <resources>
-    <string name="app_name">DaricKeyboard</string>
+    <string name="app_name">Дарик</string>
+    <string name="keyboard_name">Клавиатура Дарик</string>
+    <string name="subtype_ru">Русский</string>
+    <string name="welcome_title">Дарик</string>
+    <string name="welcome_description">Тёплая клавиатура с открытками, GIF и живыми эмоциями. Начнём с первой русской раскладки.</string>
+    <string name="enable_keyboard">1. Включить клавиатуру</string>
+    <string name="choose_keyboard">2. Выбрать «Дарик»</string>
+    <string name="test_hint">3. Проверьте клавиатуру здесь</string>
+    <string name="privacy_note">Дарик не сохраняет и не передаёт введённый текст. Сетевой доступ для первой версии клавиатуры не используется.</string>
 </resources>
