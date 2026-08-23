@@ -303,12 +303,17 @@ class DaricKeyboardService : InputMethodService() {
                     )
                     true
                 }
-                MotionEvent.ACTION_UP,
-                MotionEvent.ACTION_CANCEL -> {
+                MotionEvent.ACTION_UP -> {
                     view.isPressed = false
                     stopBackspaceRepeat()
                     view.performClick()
                     view.post { deleteRepeated = false }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    view.isPressed = false
+                    stopBackspaceRepeat()
+                    deleteRepeated = false
                     true
                 }
                 else -> true
