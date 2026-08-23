@@ -56,6 +56,9 @@ class DaricKeyboardService : InputMethodService() {
     }
 
     private fun addRow(keys: List<String>) {
+        val isNumberRow = keys == numberRow
+        val keyHeight = if (isNumberRow) 44 else 52
+
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -65,7 +68,11 @@ class DaricKeyboardService : InputMethodService() {
             val button = Button(this).apply {
                 text = displayText(key)
                 gravity = Gravity.CENTER
-                textSize = if (key == "пробел") 13f else 18f
+                textSize = when {
+                    key == "пробел" -> 13f
+                    isNumberRow -> 16f
+                    else -> 18f
+                }
                 isAllCaps = false
                 minWidth = 0
                 minimumWidth = 0
@@ -79,7 +86,7 @@ class DaricKeyboardService : InputMethodService() {
 
             row.addView(
                 button,
-                LinearLayout.LayoutParams(0, dp(52), keyWeight(key)).apply {
+                LinearLayout.LayoutParams(0, dp(keyHeight), keyWeight(key)).apply {
                     setMargins(dp(2), dp(2), dp(2), dp(2))
                 }
             )
@@ -167,7 +174,10 @@ class DaricKeyboardService : InputMethodService() {
         (value * resources.displayMetrics.density).toInt()
 
     private companion object {
+        val numberRow = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
+
         val letterRows = listOf(
+            numberRow,
             listOf("й", "ц", "у", "к", "е", "н", "г", "ш", "щ", "з", "х", "ъ"),
             listOf("ф", "ы", "в", "а", "п", "р", "о", "л", "д", "ж", "э"),
             listOf("⇧", "я", "ч", "с", "м", "и", "т", "ь", "б", "ю", "⌫"),
@@ -175,7 +185,7 @@ class DaricKeyboardService : InputMethodService() {
         )
 
         val symbolRows = listOf(
-            listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"),
+            numberRow,
             listOf("@", "#", "₽", "_", "&", "-", "+", "(", ")", "/"),
             listOf("*", "\"", "'", ":", ";", "!", "?", "⌫"),
             listOf("АБВ", "🌐", ",", "пробел", ".", "↵")
