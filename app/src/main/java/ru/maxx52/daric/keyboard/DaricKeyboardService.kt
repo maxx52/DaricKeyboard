@@ -1,23 +1,37 @@
 package ru.maxx52.daric.keyboard
 
+import android.content.ClipDescription
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputContentInfo
 import android.widget.Button
+import android.widget.GridLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
+import androidx.core.content.FileProvider
+import ru.maxx52.daric.BuildConfig
+import java.io.File
 import java.util.Locale
 
 class DaricKeyboardService : InputMethodService() {
 
     private enum class KeyboardMode { LETTERS, SYMBOLS }
     private enum class KeyboardLanguage { RUSSIAN, ENGLISH }
+    private enum class KeyboardPanel { KEYS, GIFS, GIF_SEARCH }
 
     private lateinit var keyboardRoot: LinearLayout
     private val suggestionButtons = mutableListOf<Button>()
@@ -34,8 +48,17 @@ class DaricKeyboardService : InputMethodService() {
     private val englishLocale = Locale.ENGLISH
     private var mode = KeyboardMode.LETTERS
     private var language = KeyboardLanguage.RUSSIAN
+    private var panel = KeyboardPanel.KEYS
     private var uppercase = false
     private var editorInfo: EditorInfo? = null
+
+    private var gifClient: KlipyGifClient? = null
+    private var gifItems: List<KlipyGif> = emptyList()
+    private var gifQuery = ""
+    private var gifSearchLabel: TextView? = null
+    private var gifLoading = false
+    private var gifError: String? = null
+    private var gifRequestGeneration = 0
 
     override fun onCreateInputView(): View {
         keyboardRoot = LinearLayout(this).apply {
@@ -57,6 +80,7 @@ class DaricKeyboardService : InputMethodService() {
             InputType.TYPE_CLASS_DATETIME -> KeyboardMode.SYMBOLS
             else -> KeyboardMode.LETTERS
         }
+        panel = KeyboardPanel.KEYS
         uppercase = false
         if (::keyboardRoot.isInitialized) renderKeyboard()
     }
@@ -66,6 +90,13 @@ class DaricKeyboardService : InputMethodService() {
     override fun onFinishInputView(finishingInput: Boolean) {
         stopBackspaceRepeat()
         super.onFinishInputView(finishingInput)
+    }
+
+    override fun onDestroy() {
+        stopBackspaceRepeat()
+        gifClient?.shutdown()
+        gifClient = null
+        super.onDestroy()
     }
 
     override fun onUpdateSelection(
@@ -84,7 +115,7 @@ class DaricKeyboardService : InputMethodService() {
             candidatesStart,
             candidatesEnd
         )
-        if (::keyboardRoot.isInitialized) {
+        if (::keyboardRoot.isInitialized && panel == KeyboardPanel.KEYS) {
             keyboardRoot.post { updateSuggestions() }
         }
     }
@@ -92,25 +123,445 @@ class DaricKeyboardService : InputMethodService() {
     private fun renderKeyboard() {
         keyboardRoot.removeAllViews()
         suggestionButtons.clear()
+        gifSearchLabel = null
 
-        if (suggestionsAllowed()) {
-            addSuggestionBar()
+        when (panel) {
+            KeyboardPanel.KEYS -> renderKeysPanel()
+            KeyboardPanel.GIFS -> renderGifPanel()
+            KeyboardPanel.GIF_SEARCH -> renderGifSearchPanel()
         }
+    }
+
+    private fun renderKeysPanel() {
+        addMediaToolbar()
+        if (suggestionsAllowed()) addSuggestionBar()
         addRow(numberRow, isNumberPanel = true)
-
-        val rows = when (mode) {
-            KeyboardMode.LETTERS -> when (language) {
-                KeyboardLanguage.RUSSIAN -> russianLetterRows
-                KeyboardLanguage.ENGLISH -> englishLetterRows
-            }
-            KeyboardMode.SYMBOLS -> when (language) {
-                KeyboardLanguage.RUSSIAN -> russianSymbolRows
-                KeyboardLanguage.ENGLISH -> englishSymbolRows
-            }
-        }
-        rows.forEach(::addRow)
+        currentRows().forEach(::addRow)
         keyboardRoot.post { updateSuggestions() }
     }
+
+    private fun currentRows(): List<List<String>> = when (mode) {
+        KeyboardMode.LETTERS -> when (language) {
+            KeyboardLanguage.RUSSIAN -> russianLetterRows
+            KeyboardLanguage.ENGLISH -> englishLetterRows
+        }
+        KeyboardMode.SYMBOLS -> when (language) {
+            KeyboardLanguage.RUSSIAN -> russianSymbolRows
+            KeyboardLanguage.ENGLISH -> englishSymbolRows
+        }
+    }
+
+    private fun addMediaToolbar() {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        }
+        val gifButton = smallButton("GIF").apply {
+            contentDescription = "Открыть GIF"
+            setOnClickListener { openGifPanel() }
+        }
+        row.addView(gifButton, LinearLayout.LayoutParams(dp(68), dp(36)))
+        keyboardRoot.addView(
+            row,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(2) }
+        )
+    }
+
+    private fun openGifPanel() {
+        panel = KeyboardPanel.GIFS
+        gifQuery = ""
+        renderKeyboard()
+        if (gifItems.isEmpty()) loadGifs()
+    }
+
+    private fun renderGifPanel() {
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        toolbar.addView(
+            smallButton("⌨").apply {
+                contentDescription = "Вернуться к клавиатуре"
+                setOnClickListener {
+                    panel = KeyboardPanel.KEYS
+                    renderKeyboard()
+                }
+            },
+            LinearLayout.LayoutParams(dp(48), dp(44))
+        )
+
+        val search = TextView(this).apply {
+            text = gifQuery.ifBlank { "Поиск GIF" }
+            textSize = 16f
+            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(Color.parseColor(if (gifQuery.isBlank()) "#776B84" else "#241F2E"))
+            setPadding(dp(14), 0, dp(10), 0)
+            background = roundedBackground(Color.WHITE, Color.rgb(200, 193, 210), 10)
+            setOnClickListener {
+                panel = KeyboardPanel.GIF_SEARCH
+                mode = KeyboardMode.LETTERS
+                uppercase = false
+                renderKeyboard()
+            }
+        }
+        toolbar.addView(
+            search,
+            LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                marginStart = dp(5)
+                marginEnd = dp(5)
+            }
+        )
+        toolbar.addView(
+            smallButton("⌕").apply {
+                contentDescription = "Искать GIF"
+                setOnClickListener {
+                    if (gifQuery.isBlank()) {
+                        panel = KeyboardPanel.GIF_SEARCH
+                        renderKeyboard()
+                    } else {
+                        loadGifs(gifQuery)
+                    }
+                }
+            },
+            LinearLayout.LayoutParams(dp(48), dp(44))
+        )
+        keyboardRoot.addView(
+            toolbar,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        keyboardRoot.addView(
+            TextView(this).apply {
+                text = "Powered by KLIPY"
+                textSize = 11f
+                gravity = Gravity.END
+                setTextColor(Color.parseColor("#776B84"))
+                setPadding(0, dp(2), dp(5), dp(3))
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        )
+
+        when {
+            gifLoading -> addGifLoading()
+            gifError != null -> addGifError(gifError.orEmpty())
+            gifItems.isEmpty() -> addGifError("GIF не найдены")
+            else -> addGifGrid()
+        }
+    }
+
+    private fun renderGifSearchPanel() {
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(
+            smallButton("←").apply {
+                contentDescription = "Назад к GIF"
+                setOnClickListener {
+                    panel = KeyboardPanel.GIFS
+                    renderKeyboard()
+                }
+            },
+            LinearLayout.LayoutParams(dp(48), dp(44))
+        )
+        gifSearchLabel = TextView(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            textSize = 17f
+            setTextColor(Color.parseColor("#241F2E"))
+            setPadding(dp(14), 0, dp(10), 0)
+            background = roundedBackground(Color.WHITE, Color.rgb(200, 193, 210), 10)
+        }
+        updateGifSearchLabel()
+        header.addView(
+            gifSearchLabel,
+            LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                marginStart = dp(5)
+                marginEnd = dp(5)
+            }
+        )
+        header.addView(
+            smallButton("×").apply {
+                contentDescription = "Очистить поиск"
+                setOnClickListener {
+                    gifQuery = ""
+                    updateGifSearchLabel()
+                }
+            },
+            LinearLayout.LayoutParams(dp(48), dp(44))
+        )
+        keyboardRoot.addView(
+            header,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(3) }
+        )
+
+        addRow(numberRow, isNumberPanel = true)
+        currentRows().forEach(::addRow)
+    }
+
+    private fun addGifLoading() {
+        val container = LinearLayout(this).apply {
+            gravity = Gravity.CENTER
+            addView(ProgressBar(this@DaricKeyboardService))
+        }
+        keyboardRoot.addView(
+            container,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(GIF_GRID_HEIGHT_DP)
+            )
+        )
+    }
+
+    private fun addGifError(message: String) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            addView(TextView(this@DaricKeyboardService).apply {
+                text = message
+                textSize = 14f
+                gravity = Gravity.CENTER
+                setTextColor(Color.parseColor("#5A4E67"))
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+            })
+            addView(smallButton("Повторить").apply {
+                setOnClickListener { loadGifs(gifQuery.takeIf(String::isNotBlank)) }
+            })
+        }
+        keyboardRoot.addView(
+            container,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(GIF_GRID_HEIGHT_DP)
+            )
+        )
+    }
+
+    private fun addGifGrid() {
+        val grid = GridLayout(this).apply {
+            columnCount = GIF_COLUMN_COUNT
+            setPadding(dp(3), 0, dp(3), dp(4))
+        }
+        val itemWidth = (resources.displayMetrics.widthPixels - dp(18)) / GIF_COLUMN_COUNT
+
+        gifItems.forEach { gif ->
+            val preview = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = gif.title
+                background = roundedBackground(
+                    Color.rgb(225, 219, 235),
+                    Color.rgb(200, 193, 210),
+                    10
+                )
+                clipToOutline = true
+                setOnClickListener { sendGif(gif) }
+            }
+            grid.addView(
+                preview,
+                GridLayout.LayoutParams().apply {
+                    width = itemWidth
+                    height = dp(112)
+                    setMargins(dp(2), dp(2), dp(2), dp(2))
+                }
+            )
+            GifImageLoader.load(preview, gif.previewUrl)
+        }
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(
+                grid,
+                ScrollView.LayoutParams(
+                    ScrollView.LayoutParams.MATCH_PARENT,
+                    ScrollView.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+        keyboardRoot.addView(
+            scroll,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(GIF_GRID_HEIGHT_DP)
+            )
+        )
+    }
+
+    private fun loadGifs(query: String? = null) {
+        val requestGeneration = ++gifRequestGeneration
+        gifLoading = true
+        gifError = null
+        if (::keyboardRoot.isInitialized && panel == KeyboardPanel.GIFS) renderKeyboard()
+
+        val callback: (Result<List<KlipyGif>>) -> Unit = callback@{ result ->
+            if (requestGeneration != gifRequestGeneration) return@callback
+            gifLoading = false
+            result.onSuccess { gifItems = it }
+                .onFailure {
+                    gifItems = emptyList()
+                    gifError = when {
+                        BuildConfig.KLIPY_API_KEY.isBlank() ->
+                            "Добавьте KLIPY_API_KEY в local.properties и пересоберите приложение"
+                        else -> "Не удалось загрузить GIF. Проверьте интернет и API-ключ"
+                    }
+                }
+            if (::keyboardRoot.isInitialized && panel == KeyboardPanel.GIFS) renderKeyboard()
+        }
+
+        if (query.isNullOrBlank()) gifClient().trending(callback)
+        else gifClient().search(query.trim(), callback)
+    }
+
+    private fun sendGif(gif: KlipyGif) {
+        Toast.makeText(this, "Загружаю GIF…", Toast.LENGTH_SHORT).show()
+        gifClient().download(gif, File(cacheDir, "shared_gifs")) { result ->
+            result.onSuccess { file -> commitGif(gif, file) }
+                .onFailure {
+                    Toast.makeText(this, "Не удалось загрузить GIF", Toast.LENGTH_SHORT).show()
+                }
+        }
+    }
+
+    private fun commitGif(gif: KlipyGif, file: File) {
+        val inputConnection = currentInputConnection ?: return
+        val uri = FileProvider.getUriForFile(
+            this,
+            "$packageName.fileprovider",
+            file
+        )
+        val contentInfo = InputContentInfo(
+            uri,
+            ClipDescription(gif.title, arrayOf(GIF_MIME_TYPE)),
+            null
+        )
+
+        val committed = runCatching {
+            inputConnection.commitContent(
+                contentInfo,
+                InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
+                null
+            )
+        }.getOrDefault(false)
+
+        if (committed) {
+            gifClient().reportShare(gif.slug)
+            Toast.makeText(this, "GIF отправлен", Toast.LENGTH_SHORT).show()
+        } else {
+            inputConnection.commitText(gif.contentUrl, 1)
+            Toast.makeText(
+                this,
+                "Это приложение не принимает GIF — вставлена ссылка",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun gifClient(): KlipyGifClient {
+        return gifClient ?: KlipyGifClient(
+            apiKey = BuildConfig.KLIPY_API_KEY,
+            customerId = Settings.Secure.getString(
+                contentResolver,
+                Settings.Secure.ANDROID_ID
+            ).orEmpty().ifBlank { packageName }
+        ).also { gifClient = it }
+    }
+
+    private fun updateGifSearchLabel() {
+        gifSearchLabel?.apply {
+            text = gifQuery.ifBlank { "Введите запрос" }
+            setTextColor(Color.parseColor(if (gifQuery.isBlank()) "#776B84" else "#241F2E"))
+        }
+    }
+
+    private fun handleGifSearchKey(key: String) {
+        when (key) {
+            "⇧" -> {
+                uppercase = !uppercase
+                renderKeyboard()
+            }
+            "?123" -> {
+                mode = KeyboardMode.SYMBOLS
+                renderKeyboard()
+            }
+            "АБВ", "ABC" -> {
+                mode = KeyboardMode.LETTERS
+                renderKeyboard()
+            }
+            "🌐" -> {
+                language = when (language) {
+                    KeyboardLanguage.RUSSIAN -> KeyboardLanguage.ENGLISH
+                    KeyboardLanguage.ENGLISH -> KeyboardLanguage.RUSSIAN
+                }
+                mode = KeyboardMode.LETTERS
+                uppercase = false
+                renderKeyboard()
+            }
+            "⌫" -> deleteGifQueryCharacter()
+            "пробел", "space" -> {
+                gifQuery += " "
+                updateGifSearchLabel()
+            }
+            "↵" -> {
+                if (gifQuery.isNotBlank()) {
+                    panel = KeyboardPanel.GIFS
+                    renderKeyboard()
+                    loadGifs(gifQuery)
+                }
+            }
+            else -> {
+                gifQuery += displayText(key)
+                if (uppercase && key.length == 1 && key.first().isLetter()) {
+                    uppercase = false
+                    renderKeyboard()
+                } else {
+                    updateGifSearchLabel()
+                }
+            }
+        }
+    }
+
+    private fun deleteGifQueryCharacter() {
+        if (gifQuery.isNotEmpty()) {
+            val lastCodePointStart = gifQuery.offsetByCodePoints(gifQuery.length, -1)
+            gifQuery = gifQuery.substring(0, lastCodePointStart)
+            updateGifSearchLabel()
+        }
+    }
+
+    private fun smallButton(label: String): Button = Button(this).apply {
+        text = label
+        gravity = Gravity.CENTER
+        textSize = 14f
+        isAllCaps = false
+        minWidth = 0
+        minimumWidth = 0
+        minHeight = 0
+        minimumHeight = 0
+        setPadding(dp(5), 0, dp(5), 0)
+        setTextColor(Color.parseColor("#241F2E"))
+        background = roundedBackground(
+            Color.rgb(216, 209, 232),
+            Color.rgb(185, 175, 203),
+            9
+        )
+    }
+
+    private fun roundedBackground(fillColor: Int, strokeColor: Int, radius: Int): GradientDrawable =
+        GradientDrawable().apply {
+            cornerRadius = dp(radius).toFloat()
+            setColor(fillColor)
+            setStroke(dp(1), strokeColor)
+        }
 
     private fun addSuggestionBar() {
         val row = LinearLayout(this).apply {
@@ -134,15 +585,10 @@ class DaricKeyboardService : InputMethodService() {
                 minimumHeight = 0
                 setPadding(dp(4), 0, dp(4), 0)
                 setTextColor(Color.rgb(57, 45, 72))
-                background = GradientDrawable().apply {
-                    setColor(Color.TRANSPARENT)
-                }
+                background = GradientDrawable().apply { setColor(Color.TRANSPARENT) }
             }
             suggestionButtons += button
-            row.addView(
-                button,
-                LinearLayout.LayoutParams(0, dp(42), 1f)
-            )
+            row.addView(button, LinearLayout.LayoutParams(0, dp(42), 1f))
         }
 
         keyboardRoot.addView(
@@ -150,9 +596,7 @@ class DaricKeyboardService : InputMethodService() {
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(5)
-            }
+            ).apply { bottomMargin = dp(5) }
         )
     }
 
@@ -175,20 +619,13 @@ class DaricKeyboardService : InputMethodService() {
             KeyboardLanguage.ENGLISH -> emptyList()
         }.map { applyPrefixCase(prefix, it) }
 
-        val candidates = listOf(
-            completions.getOrNull(0),
-            prefix,
-            completions.getOrNull(1)
-        )
-
+        val candidates = listOf(completions.getOrNull(0), prefix, completions.getOrNull(1))
         suggestionButtons.forEachIndexed { index, button ->
             val candidate = candidates[index]
             button.text = candidate.orEmpty()
             button.isEnabled = candidate != null
             button.setOnClickListener(
-                candidate?.let { word ->
-                    View.OnClickListener { applySuggestion(word) }
-                }
+                candidate?.let { word -> View.OnClickListener { applySuggestion(word) } }
             )
         }
     }
@@ -198,10 +635,7 @@ class DaricKeyboardService : InputMethodService() {
             ?.getTextBeforeCursor(MAX_CONTEXT_LENGTH, 0)
             ?.toString()
             .orEmpty()
-
-        return beforeCursor.takeLastWhile { character ->
-            character.isLetter() || character == '-'
-        }
+        return beforeCursor.takeLastWhile { it.isLetter() || it == '-' }
     }
 
     private fun applySuggestion(suggestion: String) {
@@ -235,24 +669,15 @@ class DaricKeyboardService : InputMethodService() {
     }
 
     private fun suggestionsAllowed(): Boolean {
+        if (panel != KeyboardPanel.KEYS) return false
         val inputType = editorInfo?.inputType ?: return false
-        if ((inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) {
-            return false
-        }
-        if ((inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) {
-            return false
-        }
-
-        val variation = inputType and InputType.TYPE_MASK_VARIATION
-        return variation !in blockedSuggestionVariations
+        if ((inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
+        if ((inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) return false
+        return (inputType and InputType.TYPE_MASK_VARIATION) !in blockedSuggestionVariations
     }
 
-    private fun addRow(
-        keys: List<String>,
-        isNumberPanel: Boolean = false
-    ) {
+    private fun addRow(keys: List<String>, isNumberPanel: Boolean = false) {
         val keyHeight = if (isNumberPanel) 44 else 52
-
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -282,13 +707,9 @@ class DaricKeyboardService : InputMethodService() {
                 setPadding(0, 0, 0, 0)
                 setTextColor(Color.parseColor("#241F2E"))
                 background = keyBackground(key, isNumberPanel)
-                if (key == "⌫") {
-                    configureBackspace(this)
-                } else {
-                    setOnClickListener { handleKey(key) }
-                }
+                if (key == "⌫") configureBackspace(this)
+                else setOnClickListener { handleKey(key) }
             }
-
             row.addView(
                 button,
                 LinearLayout.LayoutParams(0, dp(keyHeight), keyWeight(key)).apply {
@@ -307,19 +728,14 @@ class DaricKeyboardService : InputMethodService() {
     }
 
     private fun configureBackspace(button: Button) {
-        button.setOnClickListener {
-            if (!deleteRepeated) deleteOneCharacter()
-        }
+        button.setOnClickListener { if (!deleteRepeated) deleteOneCharacter() }
         button.setOnTouchListener { view, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     deleteRepeated = false
                     view.isPressed = true
                     deleteRepeatHandler.removeCallbacks(deleteRepeatAction)
-                    deleteRepeatHandler.postDelayed(
-                        deleteRepeatAction,
-                        DELETE_REPEAT_START_DELAY_MS
-                    )
+                    deleteRepeatHandler.postDelayed(deleteRepeatAction, DELETE_REPEAT_START_DELAY_MS)
                     true
                 }
                 MotionEvent.ACTION_UP -> {
@@ -345,20 +761,24 @@ class DaricKeyboardService : InputMethodService() {
     }
 
     private fun deleteOneCharacter() {
-        currentInputConnection?.deleteSurroundingTextInCodePoints(1, 0)
-        if (::keyboardRoot.isInitialized) {
-            keyboardRoot.post { updateSuggestions() }
+        if (panel == KeyboardPanel.GIF_SEARCH) {
+            deleteGifQueryCharacter()
+            return
         }
+        currentInputConnection?.deleteSurroundingTextInCodePoints(1, 0)
+        if (::keyboardRoot.isInitialized) keyboardRoot.post { updateSuggestions() }
     }
 
     private fun displayText(key: String): String =
         if (uppercase && key.length == 1 && key.first().isLetter()) {
             key.uppercase(currentLocale())
-        } else {
-            key
-        }
+        } else key
 
     private fun handleKey(key: String) {
+        if (panel == KeyboardPanel.GIF_SEARCH) {
+            handleGifSearchKey(key)
+            return
+        }
         val inputConnection = currentInputConnection ?: return
 
         when (key) {
@@ -393,19 +813,13 @@ class DaricKeyboardService : InputMethodService() {
                 }
             }
         }
-
-        if (::keyboardRoot.isInitialized) {
-            keyboardRoot.post { updateSuggestions() }
-        }
+        if (::keyboardRoot.isInitialized) keyboardRoot.post { updateSuggestions() }
     }
 
     private fun handleEnter() {
         val action = editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
             ?: EditorInfo.IME_ACTION_NONE
-
-        if (action != EditorInfo.IME_ACTION_NONE &&
-            action != EditorInfo.IME_ACTION_UNSPECIFIED
-        ) {
+        if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             currentInputConnection?.performEditorAction(action)
         } else {
             currentInputConnection?.commitText("\n", 1)
@@ -418,25 +832,16 @@ class DaricKeyboardService : InputMethodService() {
         else -> 1f
     }
 
-    private fun keyBackground(
-        key: String,
-        isNumberPanel: Boolean
-    ): GradientDrawable {
+    private fun keyBackground(key: String, isNumberPanel: Boolean): GradientDrawable {
         val special = key in setOf("⇧", "⌫", "?123", "АБВ", "ABC", "🌐", "↵")
-        val fillColor: Int = when {
+        val fillColor = when {
             isNumberPanel -> Color.rgb(248, 246, 252)
             special -> Color.rgb(216, 209, 232)
             else -> Color.WHITE
         }
-        val strokeColor: Int =
-            if (isNumberPanel) Color.rgb(185, 175, 203)
-            else Color.rgb(200, 193, 210)
-
-        return GradientDrawable().apply {
-            cornerRadius = dp(9).toFloat()
-            setColor(fillColor)
-            setStroke(dp(1), strokeColor)
-        }
+        val strokeColor = if (isNumberPanel) Color.rgb(185, 175, 203)
+        else Color.rgb(200, 193, 210)
+        return roundedBackground(fillColor, strokeColor, 9)
     }
 
     private fun dp(value: Int): Int =
@@ -447,6 +852,9 @@ class DaricKeyboardService : InputMethodService() {
         const val MAX_CONTEXT_LENGTH = 64
         const val DELETE_REPEAT_START_DELAY_MS = 350L
         const val DELETE_REPEAT_INTERVAL_MS = 55L
+        const val GIF_GRID_HEIGHT_DP = 286
+        const val GIF_COLUMN_COUNT = 2
+        const val GIF_MIME_TYPE = "image/gif"
 
         val blockedSuggestionVariations = setOf(
             InputType.TYPE_TEXT_VARIATION_PASSWORD,
