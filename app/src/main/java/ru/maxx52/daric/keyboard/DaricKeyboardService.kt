@@ -172,7 +172,6 @@ class DaricKeyboardService : InputMethodService() {
 
     private fun openGifPanel() {
         panel = KeyboardPanel.GIFS
-        gifQuery = ""
         renderKeyboard()
         if (gifItems.isEmpty()) loadGifs()
     }

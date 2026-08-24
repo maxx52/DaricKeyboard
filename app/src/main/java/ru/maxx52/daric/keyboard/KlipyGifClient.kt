@@ -160,7 +160,6 @@ internal class KlipyGifClient(
             requestMethod = method
             connectTimeout = TIMEOUT_MS
             readTimeout = TIMEOUT_MS
-            setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "DaricKeyboard/1.0 Android")
         }
     }
