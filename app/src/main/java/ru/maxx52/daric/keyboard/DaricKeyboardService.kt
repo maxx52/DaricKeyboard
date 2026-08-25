@@ -666,7 +666,7 @@ class DaricKeyboardService : InputMethodService(),
         const val SUGGESTION_SLOT_COUNT = 3
         const val NEURAL_CANDIDATE_LIMIT = 6
         const val PERSONAL_CANDIDATE_LIMIT = 6
-        val WORD_TERMINATORS = setOf('.', ',', '!', '?', ';', ':')
+        val WORD_TERMINATORS = setOf('.', ',', '!', '?', ';', ':', '…')
         const val LOG_TAG = "DaricKeyboard"
         const val SOUND_EFFECT_VOLUME = 0.25f
         const val OPENING_PUNCTUATION = "([{'\"«"

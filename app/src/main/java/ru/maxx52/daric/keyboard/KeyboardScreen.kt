@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -37,11 +38,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 
 @Composable
 internal fun KeyboardScreen(
@@ -247,6 +252,7 @@ private fun KeyRow(
                     keyHeight = keyHeight,
                     isNumberPanel = isNumberPanel,
                     onClick = { onKey(key) },
+                    onAlternativeKey = onKey,
                     onBackspacePressStart = onBackspacePressStart,
                     onBackspacePressEnd = onBackspacePressEnd
                 )
@@ -263,6 +269,7 @@ private fun RowScope.KeyboardKey(
     keyHeight: Dp,
     isNumberPanel: Boolean,
     onClick: () -> Unit,
+    onAlternativeKey: (String) -> Unit,
     onBackspacePressStart: () -> Unit,
     onBackspacePressEnd: (Boolean) -> Unit
 ) {
@@ -273,8 +280,9 @@ private fun RowScope.KeyboardKey(
         else -> MaterialTheme.colorScheme.surface
     }
     val strokeColor = if (isNumberPanel) NumberKeyStroke else KeyStroke
-    val gestureModifier = if (rawKey == "⌫") {
-        Modifier.pointerInput(Unit) {
+    var punctuationMenuVisible by remember { mutableStateOf(false) }
+    val gestureModifier = when (rawKey) {
+        "⌫" -> Modifier.pointerInput(Unit) {
             detectTapGestures(
                 onPress = {
                     onBackspacePressStart()
@@ -283,31 +291,87 @@ private fun RowScope.KeyboardKey(
                 }
             )
         }
-    } else {
-        Modifier.clickable(onClick = onClick)
+        "." -> Modifier.pointerInput(rawKey) {
+            detectTapGestures(
+                onTap = { onClick() },
+                onLongPress = { punctuationMenuVisible = true }
+            )
+        }
+        else -> Modifier.clickable(onClick = onClick)
     }
+    val popupOffset = with(LocalDensity.current) { 50.dp.roundToPx() }
 
-    Surface(
+    Box(
         modifier = Modifier
             .weight(weight)
-            .height(keyHeight)
-            .padding(2.dp)
-            .then(gestureModifier),
-        shape = RoundedCornerShape(9.dp),
-        color = fillColor,
-        border = BorderStroke(1.dp, strokeColor)
+            .height(keyHeight),
+        contentAlignment = Alignment.Center
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = label,
-                fontSize = when {
-                    rawKey == "пробел" || rawKey == "space" -> 13.sp
-                    isNumberPanel -> 16.sp
-                    else -> 18.sp
-                },
-                textAlign = TextAlign.Center,
-                maxLines = 1
-            )
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(2.dp)
+                .then(gestureModifier),
+            shape = RoundedCornerShape(9.dp),
+            color = fillColor,
+            border = BorderStroke(1.dp, strokeColor)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = label,
+                    fontSize = when {
+                        rawKey == "пробел" || rawKey == "space" -> 13.sp
+                        isNumberPanel -> 16.sp
+                        else -> 18.sp
+                    },
+                    textAlign = TextAlign.Center,
+                    maxLines = 1
+                )
+            }
+        }
+
+        if (punctuationMenuVisible && rawKey == ".") {
+            Popup(
+                alignment = Alignment.TopCenter,
+                offset = IntOffset(0, -popupOffset),
+                onDismissRequest = { punctuationMenuVisible = false },
+                properties = PopupProperties(
+                    focusable = false,
+                    dismissOnClickOutside = true
+                )
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = SuggestionBackground,
+                    border = BorderStroke(1.dp, KeyStroke),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(Modifier.padding(4.dp)) {
+                        punctuationAlternatives.forEach { symbol ->
+                            Surface(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .padding(2.dp)
+                                    .clickable {
+                                        punctuationMenuVisible = false
+                                        onAlternativeKey(symbol)
+                                    },
+                                shape = RoundedCornerShape(8.dp),
+                                color = SpecialKeyBackground,
+                                border = BorderStroke(1.dp, NumberKeyStroke)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = symbol,
+                                        fontSize = 20.sp,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -619,6 +683,8 @@ private fun SmallAction(
         }
     }
 }
+
+private val punctuationAlternatives = listOf(",", "!", "?", ":", ";", "…", "-", "—")
 
 private fun keyWeight(key: String): Float = when (key) {
     "пробел", "space" -> 4f
