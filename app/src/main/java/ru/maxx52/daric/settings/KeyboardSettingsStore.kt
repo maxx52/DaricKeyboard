@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.res.Configuration
 
 enum class KeyboardThemeMode { SYSTEM, LIGHT, DARK }
+enum class KeyboardColorTheme { LAVENDER, OCEAN, ROSE, FOREST, SUNSET, GRAPHITE }
+enum class KeyboardBackgroundMode { SOLID, GRADIENT }
 
 data class KeyboardSettings(
     val personalizedLearning: Boolean = true,
@@ -11,6 +13,8 @@ data class KeyboardSettings(
     val vibrationEnabled: Boolean = true,
     val soundEnabled: Boolean = false,
     val themeMode: KeyboardThemeMode = KeyboardThemeMode.SYSTEM,
+    val colorTheme: KeyboardColorTheme = KeyboardColorTheme.LAVENDER,
+    val backgroundMode: KeyboardBackgroundMode = KeyboardBackgroundMode.GRADIENT,
     val keyHeightDp: Int = 52
 )
 
@@ -32,6 +36,20 @@ class KeyboardSettingsStore(context: Context) {
                     ?: KeyboardThemeMode.SYSTEM.name
             )
         }.getOrDefault(KeyboardThemeMode.SYSTEM),
+        colorTheme = runCatching {
+            KeyboardColorTheme.valueOf(
+                preferences.getString(KEY_COLOR_THEME, KeyboardColorTheme.LAVENDER.name)
+                    ?: KeyboardColorTheme.LAVENDER.name
+            )
+        }.getOrDefault(KeyboardColorTheme.LAVENDER),
+        backgroundMode = runCatching {
+            KeyboardBackgroundMode.valueOf(
+                preferences.getString(
+                    KEY_BACKGROUND_MODE,
+                    KeyboardBackgroundMode.GRADIENT.name
+                ) ?: KeyboardBackgroundMode.GRADIENT.name
+            )
+        }.getOrDefault(KeyboardBackgroundMode.GRADIENT),
         keyHeightDp = preferences.getInt(KEY_HEIGHT, 52).coerceIn(44, 64)
     )
 
@@ -42,6 +60,8 @@ class KeyboardSettingsStore(context: Context) {
             .putBoolean(KEY_VIBRATION, settings.vibrationEnabled)
             .putBoolean(KEY_SOUND, settings.soundEnabled)
             .putString(KEY_THEME, settings.themeMode.name)
+            .putString(KEY_COLOR_THEME, settings.colorTheme.name)
+            .putString(KEY_BACKGROUND_MODE, settings.backgroundMode.name)
             .putInt(KEY_HEIGHT, settings.keyHeightDp.coerceIn(44, 64))
             .apply()
     }
@@ -61,6 +81,8 @@ class KeyboardSettingsStore(context: Context) {
         const val KEY_VIBRATION = "vibration"
         const val KEY_SOUND = "sound"
         const val KEY_THEME = "theme"
+        const val KEY_COLOR_THEME = "keyboard_color_theme"
+        const val KEY_BACKGROUND_MODE = "keyboard_background_mode"
         const val KEY_HEIGHT = "key_height"
     }
 }

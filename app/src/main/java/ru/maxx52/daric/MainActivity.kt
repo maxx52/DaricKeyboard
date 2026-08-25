@@ -7,6 +7,7 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import ru.maxx52.daric.keyboard.PersonalSuggestionStore
+import ru.maxx52.daric.settings.KeyboardBackgroundMode
+import ru.maxx52.daric.settings.KeyboardColorTheme
 import ru.maxx52.daric.settings.KeyboardSettings
 import ru.maxx52.daric.settings.KeyboardSettingsStore
 import ru.maxx52.daric.settings.KeyboardThemeMode
@@ -139,7 +142,71 @@ private fun SetupScreen(
                         ThemeChip("Светлая", KeyboardThemeMode.LIGHT, settings, onSettingsChange)
                         ThemeChip("Тёмная", KeyboardThemeMode.DARK, settings, onSettingsChange)
                     }
+                    Spacer(Modifier.height(16.dp))
+                    Text("Цветовая тема", fontWeight = FontWeight.SemiBold)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ColorThemeChip(
+                            "Лаванда",
+                            KeyboardColorTheme.LAVENDER,
+                            settings,
+                            onSettingsChange
+                        )
+                        ColorThemeChip(
+                            "Океан",
+                            KeyboardColorTheme.OCEAN,
+                            settings,
+                            onSettingsChange
+                        )
+                        ColorThemeChip(
+                            "Роза",
+                            KeyboardColorTheme.ROSE,
+                            settings,
+                            onSettingsChange
+                        )
+                        ColorThemeChip(
+                            "Лес",
+                            KeyboardColorTheme.FOREST,
+                            settings,
+                            onSettingsChange
+                        )
+                        ColorThemeChip(
+                            "Закат",
+                            KeyboardColorTheme.SUNSET,
+                            settings,
+                            onSettingsChange
+                        )
+                        ColorThemeChip(
+                            "Графит",
+                            KeyboardColorTheme.GRAPHITE,
+                            settings,
+                            onSettingsChange
+                        )
+                    }
                     Spacer(Modifier.height(12.dp))
+                    Text("Фон клавиатуры", fontWeight = FontWeight.SemiBold)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        BackgroundModeChip(
+                            "Однотонный",
+                            KeyboardBackgroundMode.SOLID,
+                            settings,
+                            onSettingsChange
+                        )
+                        BackgroundModeChip(
+                            "Градиент",
+                            KeyboardBackgroundMode.GRADIENT,
+                            settings,
+                            onSettingsChange
+                        )
+                    }
+                    Spacer(Modifier.height(16.dp))
                     Text(
                         "Высота клавиш: " + settings.keyHeightDp + " dp",
                         fontWeight = FontWeight.SemiBold
@@ -220,6 +287,34 @@ private fun ThemeChip(
     FilterChip(
         selected = settings.themeMode == mode,
         onClick = { onSettingsChange(settings.copy(themeMode = mode)) },
+        label = { Text(label) }
+    )
+}
+
+@Composable
+private fun ColorThemeChip(
+    label: String,
+    colorTheme: KeyboardColorTheme,
+    settings: KeyboardSettings,
+    onSettingsChange: (KeyboardSettings) -> Unit
+) {
+    FilterChip(
+        selected = settings.colorTheme == colorTheme,
+        onClick = { onSettingsChange(settings.copy(colorTheme = colorTheme)) },
+        label = { Text(label) }
+    )
+}
+
+@Composable
+private fun BackgroundModeChip(
+    label: String,
+    backgroundMode: KeyboardBackgroundMode,
+    settings: KeyboardSettings,
+    onSettingsChange: (KeyboardSettings) -> Unit
+) {
+    FilterChip(
+        selected = settings.backgroundMode == backgroundMode,
+        onClick = { onSettingsChange(settings.copy(backgroundMode = backgroundMode)) },
         label = { Text(label) }
     )
 }

@@ -675,7 +675,9 @@ class DaricKeyboardService : InputMethodService(),
         uiState = uiState.copy(
             showNumberRow = keyboardSettings.showNumberRow,
             keyHeightDp = keyboardSettings.keyHeightDp,
-            darkTheme = settingsStore.isDarkTheme(keyboardSettings)
+            darkTheme = settingsStore.isDarkTheme(keyboardSettings),
+            colorTheme = keyboardSettings.colorTheme,
+            backgroundMode = keyboardSettings.backgroundMode
         )
     }
 

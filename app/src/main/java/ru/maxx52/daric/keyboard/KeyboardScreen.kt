@@ -24,10 +24,11 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
+import ru.maxx52.daric.settings.KeyboardBackgroundMode
+import ru.maxx52.daric.settings.KeyboardColorTheme
 
 @Composable
 internal fun KeyboardScreen(
@@ -71,14 +74,27 @@ internal fun KeyboardScreen(
     onBackspacePressStart: () -> Unit,
     onBackspacePressEnd: (released: Boolean) -> Unit
 ) {
-    Surface(
-        color = KeyboardBackground,
-        contentColor = KeyTextColor
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 3.dp, vertical = 5.dp),
+    val palette = remember(state.colorTheme, state.darkTheme) {
+        keyboardPalette(state.colorTheme, state.darkTheme)
+    }
+    val backgroundColors = if (state.backgroundMode == KeyboardBackgroundMode.GRADIENT) {
+        listOf(palette.backgroundTop, palette.backgroundBottom)
+    } else {
+        listOf(palette.backgroundTop, palette.backgroundTop)
+    }
+    val backgroundBrush = Brush.verticalGradient(backgroundColors)
+
+    CompositionLocalProvider(LocalKeyboardPalette provides palette) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.Transparent,
+            contentColor = palette.text
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(backgroundBrush)
+                    .padding(horizontal = 3.dp, vertical = 5.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             when (state.panel) {
@@ -130,6 +146,7 @@ internal fun KeyboardScreen(
             }
         }
     }
+}
 }
 
 @Composable
@@ -293,7 +310,7 @@ private fun RowScope.KeyboardKey(
     val fillColor = when {
         isNumberPanel -> NumberKeyBackground
         special -> SpecialKeyBackground
-        else -> MaterialTheme.colorScheme.surface
+        else -> NumberKeyBackground
     }
     val strokeColor = if (isNumberPanel) NumberKeyStroke else KeyStroke
     var punctuationMenuVisible by remember { mutableStateOf(false) }
@@ -436,9 +453,9 @@ private fun EmojiPanel(
                     .clickable { selectedCategory = category },
                 shape = RoundedCornerShape(10.dp),
                 color = if (selected) {
-                    MaterialTheme.colorScheme.primaryContainer
+                    SpecialKeyBackground
                 } else {
-                    MaterialTheme.colorScheme.surface
+                    NumberKeyBackground
                 },
                 border = BorderStroke(1.dp, KeyStroke)
             ) {
@@ -468,7 +485,7 @@ private fun EmojiPanel(
                     .height(42.dp)
                     .clickable { onEmojiSelected(emoji) },
                 shape = RoundedCornerShape(9.dp),
-                color = MaterialTheme.colorScheme.surface,
+                color = NumberKeyBackground,
                 border = BorderStroke(1.dp, KeyStroke)
             ) {
                 Box(contentAlignment = Alignment.Center) {
@@ -530,7 +547,7 @@ private fun PostcardPanel(
                 shape = RoundedCornerShape(17.dp),
                 color = if (selected) KeyTextColor else SuggestionBackground,
                 border = BorderStroke(1.dp, if (selected) KeyTextColor else KeyStroke),
-                contentColor = if (selected) MaterialTheme.colorScheme.surface else KeyTextColor
+                contentColor = if (selected) NumberKeyBackground else KeyTextColor
             ) {
                 Box(
                     modifier = Modifier.padding(horizontal = 13.dp),
@@ -637,7 +654,7 @@ private fun GifPanel(
                 .padding(horizontal = 5.dp)
                 .clickable(onClick = onOpenSearch),
             shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = NumberKeyBackground,
             border = BorderStroke(1.dp, KeyStroke)
         ) {
             Box(
@@ -676,7 +693,7 @@ private fun GifPanel(
                 Text(
                     text = state.gifError,
                     modifier = Modifier.padding(12.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = HintColor,
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center
                 )
@@ -735,7 +752,7 @@ private fun GifSearchHeader(
                 .height(44.dp)
                 .padding(horizontal = 5.dp),
             shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = NumberKeyBackground,
             border = BorderStroke(1.dp, KeyStroke)
         ) {
             Box(
@@ -794,26 +811,151 @@ private fun keyWeight(key: String): Float = when (key) {
     else -> 1f
 }
 
-private val KeyboardBackground: Color
-    @Composable get() = MaterialTheme.colorScheme.background
+private data class KeyboardPalette(
+    val backgroundTop: Color,
+    val backgroundBottom: Color,
+    val surface: Color,
+    val numberPanel: Color,
+    val key: Color,
+    val special: Color,
+    val stroke: Color,
+    val text: Color,
+    val hint: Color
+)
+
+private val LocalKeyboardPalette = compositionLocalOf {
+    keyboardPalette(KeyboardColorTheme.LAVENDER, darkTheme = false)
+}
+
+private fun keyboardPalette(
+    theme: KeyboardColorTheme,
+    darkTheme: Boolean
+): KeyboardPalette = when (theme) {
+    KeyboardColorTheme.LAVENDER -> if (darkTheme) {
+        keyboardPaletteOf(
+            0xFF18141F, 0xFF2A2335, 0xFF2F283A,
+            0xFF3A3148, 0xFF342D40, 0xFF58456E,
+            0xFF75638A, 0xFFF4ECFC, 0xFFC6B9D3
+        )
+    } else {
+        keyboardPaletteOf(
+            0xFFF4F0FA, 0xFFE4DFF0, 0xFFFAF7FF,
+            0xFFDED5EC, 0xFFFCFBFF, 0xFFD4C5E8,
+            0xFFAC9DBF, 0xFF2B2435, 0xFF6C6376
+        )
+    }
+
+    KeyboardColorTheme.OCEAN -> if (darkTheme) {
+        keyboardPaletteOf(
+            0xFF0E1D25, 0xFF173441, 0xFF19333F,
+            0xFF24505F, 0xFF1D3A47, 0xFF24566A,
+            0xFF3B7187, 0xFFE4F5FC, 0xFFAACBD8
+        )
+    } else {
+        keyboardPaletteOf(
+            0xFFE7F4FA, 0xFFCDE8F3, 0xFFF1FAFD,
+            0xFFC6E3EE, 0xFFF8FCFF, 0xFFB9DCEB,
+            0xFF8CB9CC, 0xFF15313E, 0xFF587581
+        )
+    }
+
+    KeyboardColorTheme.ROSE -> if (darkTheme) {
+        keyboardPaletteOf(
+            0xFF27151B, 0xFF42232D, 0xFF40242D,
+            0xFF58303C, 0xFF4A2B34, 0xFF71394A,
+            0xFF955469, 0xFFFFE9EF, 0xFFD4AAB6
+        )
+    } else {
+        keyboardPaletteOf(
+            0xFFFFF0F4, 0xFFF4D6DF, 0xFFFFF7F9,
+            0xFFF0CED8, 0xFFFFF9FA, 0xFFEAB9C8,
+            0xFFCC91A4, 0xFF43242D, 0xFF805B66
+        )
+    }
+
+    KeyboardColorTheme.FOREST -> if (darkTheme) {
+        keyboardPaletteOf(
+            0xFF101F15, 0xFF1D3524, 0xFF223B29,
+            0xFF2D5035, 0xFF27432E, 0xFF35623F,
+            0xFF4F7E58, 0xFFE8F6E9, 0xFFACC9AF
+        )
+    } else {
+        keyboardPaletteOf(
+            0xFFEDF6EE, 0xFFD4E7D5, 0xFFF5FBF5,
+            0xFFCCE1CE, 0xFFFAFEFA, 0xFFBCD8BE,
+            0xFF91B494, 0xFF1F3824, 0xFF5D7761
+        )
+    }
+
+    KeyboardColorTheme.SUNSET -> if (darkTheme) {
+        keyboardPaletteOf(
+            0xFF2A1810, 0xFF47281B, 0xFF472B1E,
+            0xFF623823, 0xFF503124, 0xFF7B462A,
+            0xFFA26643, 0xFFFFF0E5, 0xFFD6B39C
+        )
+    } else {
+        keyboardPaletteOf(
+            0xFFFFF2E6, 0xFFF9D7BD, 0xFFFFF8F2,
+            0xFFF7CFAD, 0xFFFFFBF7, 0xFFF3BE91,
+            0xFFD59768, 0xFF462A19, 0xFF80624E
+        )
+    }
+
+    KeyboardColorTheme.GRAPHITE -> if (darkTheme) {
+        keyboardPaletteOf(
+            0xFF121417, 0xFF24282E, 0xFF292E34,
+            0xFF383E46, 0xFF2E333A, 0xFF414852,
+            0xFF5D6672, 0xFFF1F3F5, 0xFFB7BDC5
+        )
+    } else {
+        keyboardPaletteOf(
+            0xFFF0F1F3, 0xFFD9DCE1, 0xFFF6F7F8,
+            0xFFD5D8DD, 0xFFFAFAFB, 0xFFC9CDD4,
+            0xFFA5AAB3, 0xFF22252A, 0xFF686E77
+        )
+    }
+}
+
+private fun keyboardPaletteOf(
+    backgroundTop: Long,
+    backgroundBottom: Long,
+    surface: Long,
+    numberPanel: Long,
+    key: Long,
+    special: Long,
+    stroke: Long,
+    text: Long,
+    hint: Long
+) = KeyboardPalette(
+    backgroundTop = Color(backgroundTop),
+    backgroundBottom = Color(backgroundBottom),
+    surface = Color(surface),
+    numberPanel = Color(numberPanel),
+    key = Color(key),
+    special = Color(special),
+    stroke = Color(stroke),
+    text = Color(text),
+    hint = Color(hint)
+)
+
 private val SuggestionBackground: Color
-    @Composable get() = MaterialTheme.colorScheme.surface
+    @Composable get() = LocalKeyboardPalette.current.surface
 private val NumberPanelBackground: Color
-    @Composable get() = MaterialTheme.colorScheme.surfaceVariant
+    @Composable get() = LocalKeyboardPalette.current.numberPanel
 private val NumberKeyBackground: Color
-    @Composable get() = MaterialTheme.colorScheme.surface
+    @Composable get() = LocalKeyboardPalette.current.key
 private val SpecialKeyBackground: Color
-    @Composable get() = MaterialTheme.colorScheme.primaryContainer
+    @Composable get() = LocalKeyboardPalette.current.special
 private val NumberKeyStroke: Color
-    @Composable get() = MaterialTheme.colorScheme.outlineVariant
+    @Composable get() = LocalKeyboardPalette.current.stroke
 private val KeyStroke: Color
-    @Composable get() = MaterialTheme.colorScheme.outlineVariant
+    @Composable get() = LocalKeyboardPalette.current.stroke
 private val KeyTextColor: Color
-    @Composable get() = MaterialTheme.colorScheme.onSurface
+    @Composable get() = LocalKeyboardPalette.current.text
 private val HintColor: Color
-    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+    @Composable get() = LocalKeyboardPalette.current.hint
 private val GifPlaceholder: Color
-    @Composable get() = MaterialTheme.colorScheme.surfaceVariant
+    @Composable get() = LocalKeyboardPalette.current.numberPanel
 private val GifGridHeight = 286.dp
 private val EmojiGridHeight = 246.dp
 private val PostcardGridHeight = 260.dp

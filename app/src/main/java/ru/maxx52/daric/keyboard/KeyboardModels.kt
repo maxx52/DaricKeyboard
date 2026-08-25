@@ -1,5 +1,8 @@
 package ru.maxx52.daric.keyboard
 
+import ru.maxx52.daric.settings.KeyboardBackgroundMode
+import ru.maxx52.daric.settings.KeyboardColorTheme
+
 internal enum class KeyboardMode { LETTERS, SYMBOLS }
 internal enum class KeyboardLanguage { RUSSIAN, ENGLISH }
 internal enum class KeyboardPanel { KEYS, GIFS, GIF_SEARCH, POSTCARDS, EMOJIS }
@@ -17,7 +20,9 @@ internal data class KeyboardUiState(
     val gifError: String? = null,
     val showNumberRow: Boolean = true,
     val keyHeightDp: Int = 52,
-    val darkTheme: Boolean = false
+    val darkTheme: Boolean = false,
+    val colorTheme: KeyboardColorTheme = KeyboardColorTheme.LAVENDER,
+    val backgroundMode: KeyboardBackgroundMode = KeyboardBackgroundMode.GRADIENT
 ) {
     val rows: List<List<String>>
         get() = when (mode) {
