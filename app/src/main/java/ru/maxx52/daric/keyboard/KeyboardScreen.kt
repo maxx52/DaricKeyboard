@@ -191,14 +191,16 @@ private fun KeysPanel(
     onBackspacePressStart: () -> Unit,
     onBackspacePressEnd: (Boolean) -> Unit
 ) {
-    KeyRow(
-        keys = numberRow,
-        state = state,
-        isNumberPanel = true,
-        onKey = onKey,
-        onBackspacePressStart = onBackspacePressStart,
-        onBackspacePressEnd = onBackspacePressEnd
-    )
+    if (state.showNumberRow) {
+        KeyRow(
+            keys = numberRow,
+            state = state,
+            isNumberPanel = true,
+            onKey = onKey,
+            onBackspacePressStart = onBackspacePressStart,
+            onBackspacePressEnd = onBackspacePressEnd
+        )
+    }
     state.rows.forEach { row ->
         KeyRow(
             keys = row,
@@ -219,7 +221,12 @@ private fun KeyRow(
     onBackspacePressStart: () -> Unit,
     onBackspacePressEnd: (Boolean) -> Unit
 ) {
-    val height = if (isNumberPanel) 48.dp else 56.dp
+    val keyHeight = if (isNumberPanel) {
+        (state.keyHeightDp - 8).coerceAtLeast(40).dp
+    } else {
+        state.keyHeightDp.dp
+    }
+    val height = keyHeight + 4.dp
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(if (isNumberPanel) 10.dp else 0.dp),
@@ -237,7 +244,7 @@ private fun KeyRow(
                     label = state.displayText(key),
                     rawKey = key,
                     weight = keyWeight(key),
-                    keyHeight = if (isNumberPanel) 44.dp else 52.dp,
+                    keyHeight = keyHeight,
                     isNumberPanel = isNumberPanel,
                     onClick = { onKey(key) },
                     onBackspacePressStart = onBackspacePressStart,
@@ -263,7 +270,7 @@ private fun RowScope.KeyboardKey(
     val fillColor = when {
         isNumberPanel -> NumberKeyBackground
         special -> SpecialKeyBackground
-        else -> Color.White
+        else -> MaterialTheme.colorScheme.surface
     }
     val strokeColor = if (isNumberPanel) NumberKeyStroke else KeyStroke
     val gestureModifier = if (rawKey == "⌫") {
@@ -357,7 +364,7 @@ private fun PostcardPanel(
                 shape = RoundedCornerShape(17.dp),
                 color = if (selected) KeyTextColor else SuggestionBackground,
                 border = BorderStroke(1.dp, if (selected) KeyTextColor else KeyStroke),
-                contentColor = if (selected) Color.White else KeyTextColor
+                contentColor = if (selected) MaterialTheme.colorScheme.surface else KeyTextColor
             ) {
                 Box(
                     modifier = Modifier.padding(horizontal = 13.dp),
@@ -464,7 +471,7 @@ private fun GifPanel(
                 .padding(horizontal = 5.dp)
                 .clickable(onClick = onOpenSearch),
             shape = RoundedCornerShape(10.dp),
-            color = Color.White,
+            color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, KeyStroke)
         ) {
             Box(
@@ -562,7 +569,7 @@ private fun GifSearchHeader(
                 .height(44.dp)
                 .padding(horizontal = 5.dp),
             shape = RoundedCornerShape(10.dp),
-            color = Color.White,
+            color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, KeyStroke)
         ) {
             Box(
@@ -619,15 +626,25 @@ private fun keyWeight(key: String): Float = when (key) {
     else -> 1f
 }
 
-private val KeyboardBackground = Color(0xFFECE9F4)
-private val SuggestionBackground = Color(0xFFF5F1FA)
-private val NumberPanelBackground = Color(0xFFD8D1E8)
-private val NumberKeyBackground = Color(0xFFF8F6FC)
-private val SpecialKeyBackground = Color(0xFFD8D1E8)
-private val NumberKeyStroke = Color(0xFFB9AFCB)
-private val KeyStroke = Color(0xFFC8C1D2)
-private val KeyTextColor = Color(0xFF241F2E)
-private val HintColor = Color(0xFF776B84)
-private val GifPlaceholder = Color(0xFFE1DBEB)
+private val KeyboardBackground: Color
+    @Composable get() = MaterialTheme.colorScheme.background
+private val SuggestionBackground: Color
+    @Composable get() = MaterialTheme.colorScheme.surface
+private val NumberPanelBackground: Color
+    @Composable get() = MaterialTheme.colorScheme.surfaceVariant
+private val NumberKeyBackground: Color
+    @Composable get() = MaterialTheme.colorScheme.surface
+private val SpecialKeyBackground: Color
+    @Composable get() = MaterialTheme.colorScheme.primaryContainer
+private val NumberKeyStroke: Color
+    @Composable get() = MaterialTheme.colorScheme.outlineVariant
+private val KeyStroke: Color
+    @Composable get() = MaterialTheme.colorScheme.outlineVariant
+private val KeyTextColor: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurface
+private val HintColor: Color
+    @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+private val GifPlaceholder: Color
+    @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 private val GifGridHeight = 286.dp
 private val PostcardGridHeight = 260.dp

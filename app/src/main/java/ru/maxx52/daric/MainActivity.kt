@@ -7,49 +7,41 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import ru.maxx52.daric.keyboard.PersonalSuggestionStore
+import ru.maxx52.daric.settings.KeyboardSettings
+import ru.maxx52.daric.settings.KeyboardSettingsStore
+import ru.maxx52.daric.settings.KeyboardThemeMode
 import ru.maxx52.daric.ui.theme.DaricTheme
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            DaricTheme {
+            val store = remember { KeyboardSettingsStore(applicationContext) }
+            var settings by remember { mutableStateOf(store.load()) }
+            DaricTheme(darkTheme = store.isDarkTheme(settings)) {
                 SetupScreen(
+                    settings = settings,
+                    onSettingsChange = { settings = it; store.save(it) },
+                    onClearHistory = { PersonalSuggestionStore.clearAll(applicationContext) },
                     onEnableKeyboard = {
                         startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
                     },
                     onChooseKeyboard = {
-                        getSystemService(InputMethodManager::class.java)
-                            .showInputMethodPicker()
+                        getSystemService(InputMethodManager::class.java).showInputMethodPicker()
                     }
                 )
             }
@@ -59,67 +51,169 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun SetupScreen(
+    settings: KeyboardSettings,
+    onSettingsChange: (KeyboardSettings) -> Unit,
+    onClearHistory: () -> Unit,
     onEnableKeyboard: () -> Unit,
     onChooseKeyboard: () -> Unit
 ) {
     var testText by rememberSaveable { mutableStateOf("") }
+    var historyCleared by rememberSaveable { mutableStateOf(false) }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 28.dp, vertical = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Дарик",
+                "Дарик",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
-            Spacer(Modifier.height(12.dp))
             Text(
-                text = "Тёплая клавиатура с открытками, GIF и живыми эмоциями.",
-                style = MaterialTheme.typography.bodyLarge,
-                textAlign = TextAlign.Center
+                "Клавиатура с открытками, GIF и умными подсказками",
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyLarge
             )
-            Spacer(Modifier.height(32.dp))
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onEnableKeyboard
-            ) {
+            Spacer(Modifier.height(24.dp))
+            Button(Modifier.fillMaxWidth(), onClick = onEnableKeyboard) {
                 Text("1. Включить клавиатуру")
             }
-            Spacer(Modifier.height(12.dp))
-            OutlinedButton(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onChooseKeyboard
-            ) {
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(Modifier.fillMaxWidth(), onClick = onChooseKeyboard) {
                 Text("2. Выбрать «Дарик»")
             }
-            Spacer(Modifier.height(28.dp))
+            Spacer(Modifier.height(20.dp))
             OutlinedTextField(
                 value = testText,
                 onValueChange = { testText = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("3. Проверьте клавиатуру здесь") },
-                minLines = 4
+                label = { Text("3. Проверить клавиатуру") },
+                minLines = 3
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
             Text(
-                text = "Дарик не сохраняет и не передаёт введённый текст. " +
-                    "Интернет используется только для загрузки GIF; в KLIPY отправляются " +
-                    "поисковый запрос и технические данные, необходимые для работы сервиса.",
+                "Настройки клавиатуры",
+                modifier = Modifier.fillMaxWidth(),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(10.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    SettingSwitch(
+                        "Персональное обучение",
+                        "Поднимать ваши частые слова выше остальных",
+                        settings.personalizedLearning
+                    ) { onSettingsChange(settings.copy(personalizedLearning = it)) }
+                    SettingSwitch(
+                        "Цифровой ряд",
+                        "Показывать цифры над буквами",
+                        settings.showNumberRow
+                    ) { onSettingsChange(settings.copy(showNumberRow = it)) }
+                    SettingSwitch("Вибрация клавиш", checked = settings.vibrationEnabled) {
+                        onSettingsChange(settings.copy(vibrationEnabled = it))
+                    }
+                    SettingSwitch("Звук клавиш", checked = settings.soundEnabled) {
+                        onSettingsChange(settings.copy(soundEnabled = it))
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Тема", fontWeight = FontWeight.SemiBold)
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        ThemeChip("Система", KeyboardThemeMode.SYSTEM, settings, onSettingsChange)
+                        ThemeChip("Светлая", KeyboardThemeMode.LIGHT, settings, onSettingsChange)
+                        ThemeChip("Тёмная", KeyboardThemeMode.DARK, settings, onSettingsChange)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Высота клавиш: " + settings.keyHeightDp + " dp",
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Slider(
+                        value = settings.keyHeightDp.toFloat(),
+                        onValueChange = {
+                            onSettingsChange(
+                                settings.copy(keyHeightDp = (it / 4f).roundToInt() * 4)
+                            )
+                        },
+                        valueRange = 44f..64f,
+                        steps = 4
+                    )
+                    TextButton(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            onClearHistory()
+                            historyCleared = true
+                        }
+                    ) {
+                        Text("Очистить историю подсказок")
+                    }
+                    if (historyCleared) {
+                        Text(
+                            "Персональная история очищена",
+                            Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "Настройки применятся при следующем открытии клавиатуры. " +
+                    "Введённый текст не передаётся в интернет; сеть используется только для GIF.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
+}
+
+@Composable
+private fun SettingSwitch(
+    title: String,
+    description: String? = null,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.Medium)
+            if (description != null) {
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Switch(checked, onCheckedChange)
+    }
+}
+
+@Composable
+private fun ThemeChip(
+    label: String,
+    mode: KeyboardThemeMode,
+    settings: KeyboardSettings,
+    onSettingsChange: (KeyboardSettings) -> Unit
+) {
+    FilterChip(
+        selected = settings.themeMode == mode,
+        onClick = { onSettingsChange(settings.copy(themeMode = mode)) },
+        label = { Text(label) }
+    )
 }

@@ -16,6 +16,7 @@ internal class PersonalSuggestionStore(context: Context) : ContextLanguageModel 
     )
     private val russianLocale = Locale("ru", "RU")
     private val counts = mutableMapOf<String, MutableMap<String, Int>>()
+    private var loadedClearGeneration = preferences.getInt(CLEAR_GENERATION_KEY, 0)
 
     init {
         load()
@@ -23,6 +24,7 @@ internal class PersonalSuggestionStore(context: Context) : ContextLanguageModel 
 
     @Synchronized
     fun learn(previousWords: List<String>, completedWord: String) {
+        synchronizeClearGeneration()
         val word = normalize(completedWord) ?: return
         val normalizedContext = previousWords.mapNotNull(::normalize).takeLast(MAX_CONTEXT_WORDS)
         val contextKeys = buildList {
@@ -51,6 +53,7 @@ internal class PersonalSuggestionStore(context: Context) : ContextLanguageModel 
 
     @Synchronized
     override fun predictNext(previousWords: List<String>, limit: Int): List<String> {
+        synchronizeClearGeneration()
         if (limit <= 0) return emptyList()
         val normalizedContext = previousWords.mapNotNull(::normalize).takeLast(MAX_CONTEXT_WORDS)
         val keys = buildList {
@@ -98,6 +101,14 @@ internal class PersonalSuggestionStore(context: Context) : ContextLanguageModel 
         }
     }
 
+    private fun synchronizeClearGeneration() {
+        val currentGeneration = preferences.getInt(CLEAR_GENERATION_KEY, 0)
+        if (currentGeneration != loadedClearGeneration) {
+            counts.clear()
+            loadedClearGeneration = currentGeneration
+        }
+    }
+
     private fun persist() {
         val root = JSONObject()
         counts.forEach { (contextKey, candidates) ->
@@ -108,15 +119,28 @@ internal class PersonalSuggestionStore(context: Context) : ContextLanguageModel 
         preferences.edit().putString(DATA_KEY, root.toString()).apply()
     }
 
-    private companion object {
-        const val PREFERENCES_NAME = "daric_personal_suggestions"
-        const val DATA_KEY = "transition_counts"
-        const val GLOBAL_CONTEXT = "*"
-        const val MAX_CONTEXT_WORDS = 2
-        const val MAX_CONTEXTS = 250
-        const val MAX_CANDIDATES_PER_CONTEXT = 8
-        const val MAX_COUNT = 1_000
-        const val MIN_WORD_LENGTH = 2
-        const val MAX_WORD_LENGTH = 32
+    internal companion object {
+        fun clearAll(context: Context) {
+            val preferences = context.applicationContext.getSharedPreferences(
+                PREFERENCES_NAME,
+                Context.MODE_PRIVATE
+            )
+            val nextGeneration = preferences.getInt(CLEAR_GENERATION_KEY, 0) + 1
+            preferences.edit()
+                .remove(DATA_KEY)
+                .putInt(CLEAR_GENERATION_KEY, nextGeneration)
+                .apply()
+        }
+
+        private const val PREFERENCES_NAME = "daric_personal_suggestions"
+        private const val DATA_KEY = "transition_counts"
+        private const val CLEAR_GENERATION_KEY = "clear_generation"
+        private const val GLOBAL_CONTEXT = "*"
+        private const val MAX_CONTEXT_WORDS = 2
+        private const val MAX_CONTEXTS = 250
+        private const val MAX_CANDIDATES_PER_CONTEXT = 8
+        private const val MAX_COUNT = 1_000
+        private const val MIN_WORD_LENGTH = 2
+        private const val MAX_WORD_LENGTH = 32
     }
 }

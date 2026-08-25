@@ -14,7 +14,10 @@ internal data class KeyboardUiState(
     val gifItems: List<KlipyGif> = emptyList(),
     val gifQuery: String = "",
     val gifLoading: Boolean = false,
-    val gifError: String? = null
+    val gifError: String? = null,
+    val showNumberRow: Boolean = true,
+    val keyHeightDp: Int = 52,
+    val darkTheme: Boolean = false
 ) {
     val rows: List<List<String>>
         get() = when (mode) {

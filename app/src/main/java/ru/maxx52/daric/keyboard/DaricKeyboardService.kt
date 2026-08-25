@@ -2,12 +2,14 @@ package ru.maxx52.daric.keyboard
 
 import android.content.ClipDescription
 import android.content.Intent
+import android.media.AudioManager
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -31,6 +33,8 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import ru.maxx52.daric.BuildConfig
+import ru.maxx52.daric.settings.KeyboardSettings
+import ru.maxx52.daric.settings.KeyboardSettingsStore
 import ru.maxx52.daric.ui.theme.DaricTheme
 import java.io.File
 import java.util.Locale
@@ -63,6 +67,9 @@ class DaricKeyboardService : InputMethodService(),
     private var uiState by mutableStateOf(KeyboardUiState())
     private var neuralSuggestionModel: LiteRtNextWordModel? = null
     private lateinit var personalSuggestionStore: PersonalSuggestionStore
+    private lateinit var settingsStore: KeyboardSettingsStore
+    private var keyboardSettings = KeyboardSettings()
+    private var inputComposeView: View? = null
     @Volatile private var serviceDestroyed = false
 
     private var gifClient: KlipyGifClient? = null
@@ -76,6 +83,8 @@ class DaricKeyboardService : InputMethodService(),
         window?.window?.decorView?.let(::installViewTreeOwners)
         serviceDestroyed = false
         personalSuggestionStore = PersonalSuggestionStore(applicationContext)
+        settingsStore = KeyboardSettingsStore(applicationContext)
+        refreshKeyboardSettings()
         loadNeuralSuggestionModel()
     }
 
@@ -108,10 +117,11 @@ class DaricKeyboardService : InputMethodService(),
 
     override fun onCreateInputView(): View {
         return ComposeView(this).apply {
+            inputComposeView = this
             installViewTreeOwners(this)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                DaricTheme(darkTheme = false) {
+                DaricTheme(darkTheme = uiState.darkTheme) {
                     KeyboardScreen(
                         state = uiState,
                         onKey = ::handleKey,
@@ -145,6 +155,7 @@ class DaricKeyboardService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         editorInfo = info
+        refreshKeyboardSettings()
         uiState = uiState.copy(
             mode = when (info?.inputType?.and(InputType.TYPE_MASK_CLASS)) {
                 InputType.TYPE_CLASS_NUMBER,
@@ -193,6 +204,7 @@ class DaricKeyboardService : InputMethodService(),
         stopBackspaceRepeat()
         neuralSuggestionModel?.close()
         neuralSuggestionModel = null
+        inputComposeView = null
         gifClient?.shutdown()
         gifClient = null
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
@@ -374,6 +386,7 @@ class DaricKeyboardService : InputMethodService(),
     }
 
     private fun handleKey(key: String) {
+        performKeyFeedback()
         if (uiState.panel == KeyboardPanel.GIF_SEARCH) {
             handleGifSearchKey(key)
             return
@@ -445,6 +458,7 @@ class DaricKeyboardService : InputMethodService(),
     }
 
     private fun startBackspaceRepeat() {
+        performKeyFeedback()
         deleteRepeated = false
         deleteRepeatHandler.removeCallbacks(deleteRepeatAction)
         deleteRepeatHandler.postDelayed(deleteRepeatAction, DELETE_REPEAT_START_DELAY_MS)
@@ -604,6 +618,7 @@ class DaricKeyboardService : InputMethodService(),
     }
 
     private fun personalizedLearningAllowed(): Boolean {
+        if (!keyboardSettings.personalizedLearning) return false
         if (uiState.language != KeyboardLanguage.RUSSIAN || !suggestionsAllowed()) return false
         val imeOptions = editorInfo?.imeOptions ?: return false
         return (imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) == 0
@@ -614,6 +629,25 @@ class DaricKeyboardService : InputMethodService(),
         val context = suggestionContext()
         if (context.currentWord.isNotBlank()) {
             personalSuggestionStore.learn(context.previousWords, context.currentWord)
+        }
+    }
+
+    private fun refreshKeyboardSettings() {
+        keyboardSettings = settingsStore.load()
+        uiState = uiState.copy(
+            showNumberRow = keyboardSettings.showNumberRow,
+            keyHeightDp = keyboardSettings.keyHeightDp,
+            darkTheme = settingsStore.isDarkTheme(keyboardSettings)
+        )
+    }
+
+    private fun performKeyFeedback() {
+        if (keyboardSettings.vibrationEnabled) {
+            inputComposeView?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        }
+        if (keyboardSettings.soundEnabled) {
+            getSystemService(AudioManager::class.java)
+                ?.playSoundEffect(AudioManager.FX_KEY_CLICK, SOUND_EFFECT_VOLUME)
         }
     }
 
@@ -634,6 +668,7 @@ class DaricKeyboardService : InputMethodService(),
         const val PERSONAL_CANDIDATE_LIMIT = 6
         val WORD_TERMINATORS = setOf('.', ',', '!', '?', ';', ':')
         const val LOG_TAG = "DaricKeyboard"
+        const val SOUND_EFFECT_VOLUME = 0.25f
         const val OPENING_PUNCTUATION = "([{'\"«"
         const val DELETE_REPEAT_START_DELAY_MS = 350L
         const val DELETE_REPEAT_INTERVAL_MS = 55L
