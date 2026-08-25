@@ -2,7 +2,7 @@ package ru.maxx52.daric.keyboard
 
 internal enum class KeyboardMode { LETTERS, SYMBOLS }
 internal enum class KeyboardLanguage { RUSSIAN, ENGLISH }
-internal enum class KeyboardPanel { KEYS, GIFS, GIF_SEARCH, POSTCARDS }
+internal enum class KeyboardPanel { KEYS, GIFS, GIF_SEARCH, POSTCARDS, EMOJIS }
 
 internal data class KeyboardUiState(
     val mode: KeyboardMode = KeyboardMode.LETTERS,

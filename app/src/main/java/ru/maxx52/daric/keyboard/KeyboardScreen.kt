@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +56,7 @@ internal fun KeyboardScreen(
     onSuggestion: (String) -> Unit,
     onOpenGif: () -> Unit,
     onOpenPostcards: () -> Unit,
+    onOpenEmoji: () -> Unit,
     onCloseGif: () -> Unit,
     onOpenGifSearch: () -> Unit,
     onCloseGifSearch: () -> Unit,
@@ -64,6 +66,8 @@ internal fun KeyboardScreen(
     onGifSelected: (KlipyGif) -> Unit,
     onClosePostcards: () -> Unit,
     onPostcardSelected: (Postcard) -> Unit,
+    onCloseEmoji: () -> Unit,
+    onEmojiSelected: (String) -> Unit,
     onBackspacePressStart: () -> Unit,
     onBackspacePressEnd: (released: Boolean) -> Unit
 ) {
@@ -81,7 +85,8 @@ internal fun KeyboardScreen(
                 KeyboardPanel.KEYS -> {
                     MediaToolbar(
                         onOpenGif = onOpenGif,
-                        onOpenPostcards = onOpenPostcards
+                        onOpenPostcards = onOpenPostcards,
+                        onOpenEmoji = onOpenEmoji
                     )
                     if (state.suggestionsVisible) {
                         SuggestionBar(state.suggestions, onSuggestion)
@@ -118,6 +123,10 @@ internal fun KeyboardScreen(
                     onClose = onClosePostcards,
                     onPostcardSelected = onPostcardSelected
                 )
+                KeyboardPanel.EMOJIS -> EmojiPanel(
+                    onClose = onCloseEmoji,
+                    onEmojiSelected = onEmojiSelected
+                )
             }
         }
     }
@@ -126,7 +135,8 @@ internal fun KeyboardScreen(
 @Composable
 private fun MediaToolbar(
     onOpenGif: () -> Unit,
-    onOpenPostcards: () -> Unit
+    onOpenPostcards: () -> Unit,
+    onOpenEmoji: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -144,6 +154,12 @@ private fun MediaToolbar(
             label = "Открытки",
             modifier = Modifier.width(104.dp),
             onClick = onOpenPostcards
+        )
+        Spacer(Modifier.width(6.dp))
+        SmallAction(
+            label = "😊",
+            modifier = Modifier.width(48.dp),
+            onClick = onOpenEmoji
         )
     }
 }
@@ -376,6 +392,92 @@ private fun RowScope.KeyboardKey(
     }
 }
 
+
+@Composable
+private fun EmojiPanel(
+    onClose: () -> Unit,
+    onEmojiSelected: (String) -> Unit
+) {
+    var selectedCategory by rememberSaveable {
+        mutableStateOf(EmojiCategory.SMILEYS)
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SmallAction("⌨", Modifier.width(48.dp), onClose)
+        Text(
+            text = selectedCategory.title,
+            modifier = Modifier.weight(1f),
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.width(48.dp))
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 3.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        EmojiCategory.entries.forEach { category ->
+            val selected = category == selectedCategory
+            Surface(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clickable { selectedCategory = category },
+                shape = RoundedCornerShape(10.dp),
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+                border = BorderStroke(1.dp, KeyStroke)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(category.icon, fontSize = 20.sp)
+                }
+            }
+        }
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(8),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(EmojiGridHeight),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(3.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        itemsIndexed(
+            items = selectedCategory.emojis,
+            key = { index, emoji -> selectedCategory.name + "-" + index + "-" + emoji }
+        ) { _, emoji ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(42.dp)
+                    .clickable { onEmojiSelected(emoji) },
+                shape = RoundedCornerShape(9.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, KeyStroke)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(emoji, fontSize = 25.sp, textAlign = TextAlign.Center)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun PostcardPanel(
@@ -713,4 +815,5 @@ private val HintColor: Color
 private val GifPlaceholder: Color
     @Composable get() = MaterialTheme.colorScheme.surfaceVariant
 private val GifGridHeight = 286.dp
+private val EmojiGridHeight = 246.dp
 private val PostcardGridHeight = 260.dp

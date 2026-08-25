@@ -4,6 +4,7 @@ import android.content.ClipDescription
 import android.content.Intent
 import android.media.AudioManager
 import android.inputmethodservice.InputMethodService
+import android.icu.text.BreakIterator
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -128,6 +129,7 @@ class DaricKeyboardService : InputMethodService(),
                         onSuggestion = ::applySuggestion,
                         onOpenGif = ::openGifPanel,
                         onOpenPostcards = ::openPostcards,
+                        onOpenEmoji = ::openEmojiPanel,
                         onCloseGif = ::closeGifPanel,
                         onOpenGifSearch = ::openGifSearch,
                         onCloseGifSearch = ::closeGifSearch,
@@ -144,6 +146,8 @@ class DaricKeyboardService : InputMethodService(),
                         onGifSelected = ::sendGif,
                         onClosePostcards = ::closePostcards,
                         onPostcardSelected = ::sendPostcard,
+                        onCloseEmoji = ::closeEmojiPanel,
+                        onEmojiSelected = ::insertEmoji,
                         onBackspacePressStart = ::startBackspaceRepeat,
                         onBackspacePressEnd = ::finishBackspaceRepeat
                     )
@@ -218,6 +222,22 @@ class DaricKeyboardService : InputMethodService(),
 
     private fun closePostcards() {
         uiState = uiState.copy(panel = KeyboardPanel.KEYS)
+        updateSuggestions()
+    }
+
+    private fun openEmojiPanel() {
+        uiState = uiState.copy(panel = KeyboardPanel.EMOJIS)
+    }
+
+    private fun closeEmojiPanel() {
+        uiState = uiState.copy(panel = KeyboardPanel.KEYS)
+        updateSuggestions()
+    }
+
+    private fun insertEmoji(emoji: String) {
+        if (emoji.isBlank()) return
+        learnCurrentWord()
+        currentInputConnection?.commitText(emoji, 1)
         updateSuggestions()
     }
 
@@ -478,7 +498,25 @@ class DaricKeyboardService : InputMethodService(),
         if (uiState.panel == KeyboardPanel.GIF_SEARCH) {
             deleteGifQueryCharacter()
         } else {
-            currentInputConnection?.deleteSurroundingTextInCodePoints(1, 0)
+            val inputConnection = currentInputConnection ?: return
+            val textBeforeCursor = inputConnection
+                .getTextBeforeCursor(MAX_DELETE_CONTEXT_LENGTH, 0)
+                ?.toString()
+                .orEmpty()
+            val codePointCount = if (textBeforeCursor.isBlank()) {
+                1
+            } else {
+                val iterator = BreakIterator.getCharacterInstance(currentLocale())
+                iterator.setText(textBeforeCursor)
+                val clusterStart = iterator.preceding(textBeforeCursor.length)
+                if (clusterStart == BreakIterator.DONE) {
+                    1
+                } else {
+                    textBeforeCursor.codePointCount(clusterStart, textBeforeCursor.length)
+                        .coerceAtLeast(1)
+                }
+            }
+            inputConnection.deleteSurroundingTextInCodePoints(codePointCount, 0)
             updateSuggestions()
         }
     }
@@ -663,6 +701,7 @@ class DaricKeyboardService : InputMethodService(),
 
     private companion object {
         const val MAX_CONTEXT_LENGTH = 256
+        const val MAX_DELETE_CONTEXT_LENGTH = 32
         const val SUGGESTION_SLOT_COUNT = 3
         const val NEURAL_CANDIDATE_LIMIT = 6
         const val PERSONAL_CANDIDATE_LIMIT = 6
