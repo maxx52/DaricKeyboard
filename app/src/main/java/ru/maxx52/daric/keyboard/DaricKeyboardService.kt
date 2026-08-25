@@ -446,53 +446,82 @@ class DaricKeyboardService : InputMethodService(),
             return
         }
 
-        val prefix = currentWord()
-        if (prefix.isBlank()) {
-            uiState = uiState.copy(
-                suggestionsVisible = true,
-                suggestions = emptySuggestions
-            )
-            return
-        }
-
-        val completions = when (uiState.language) {
-            KeyboardLanguage.RUSSIAN -> RussianSuggestionEngine
-                .suggest(prefix.lowercase(russianLocale), limit = 2)
+        val context = suggestionContext()
+        val candidates = when (uiState.language) {
+            KeyboardLanguage.RUSSIAN -> RussianSuggestionEngine.suggest(context, limit = 3)
             KeyboardLanguage.ENGLISH -> emptyList()
-        }.map { applyPrefixCase(prefix, it) }
+        }.map { suggestion -> applySuggestionCase(context, suggestion) }
+
+        val suggestions = if (context.currentWord.isNotBlank()) {
+            listOf(
+                candidates.getOrNull(0).orEmpty(),
+                context.currentWord,
+                candidates.getOrNull(1).orEmpty()
+            )
+        } else {
+            List(SUGGESTION_SLOT_COUNT) { index -> candidates.getOrNull(index).orEmpty() }
+        }
 
         uiState = uiState.copy(
             suggestionsVisible = true,
-            suggestions = listOf(
-                completions.getOrNull(0).orEmpty(),
-                prefix,
-                completions.getOrNull(1).orEmpty()
-            )
+            suggestions = suggestions
         )
     }
 
-    private fun currentWord(): String {
-        return currentInputConnection
+    private fun suggestionContext(): SuggestionContext {
+        val textBeforeCursor = currentInputConnection
             ?.getTextBeforeCursor(MAX_CONTEXT_LENGTH, 0)
             ?.toString()
             .orEmpty()
-            .takeLastWhile { it.isLetter() || it == '-' }
+        return SuggestionContextParser.parse(textBeforeCursor)
     }
 
     private fun applySuggestion(suggestion: String) {
         if (suggestion.isBlank()) return
         val inputConnection = currentInputConnection ?: return
-        val currentWord = currentWord()
-        if (currentWord.isBlank()) return
+        val context = suggestionContext()
 
         inputConnection.beginBatchEdit()
-        inputConnection.deleteSurroundingTextInCodePoints(
-            currentWord.codePointCount(0, currentWord.length),
-            0
-        )
-        inputConnection.commitText("$suggestion ", 1)
-        inputConnection.endBatchEdit()
+        try {
+            if (context.currentWord.isNotBlank()) {
+                inputConnection.deleteSurroundingTextInCodePoints(
+                    context.currentWord.codePointCount(0, context.currentWord.length),
+                    0
+                )
+            }
+
+            val leadingSpace = if (
+                context.currentWord.isBlank() &&
+                needsSpaceBeforeSuggestion(context.textBeforeCursor)
+            ) {
+                " "
+            } else {
+                ""
+            }
+            inputConnection.commitText("$leadingSpace$suggestion ", 1)
+        } finally {
+            inputConnection.endBatchEdit()
+        }
         updateSuggestions()
+    }
+
+    private fun needsSpaceBeforeSuggestion(textBeforeCursor: String): Boolean {
+        val lastCharacter = textBeforeCursor.lastOrNull() ?: return false
+        return !lastCharacter.isWhitespace() && lastCharacter !in OPENING_PUNCTUATION
+    }
+
+    private fun applySuggestionCase(
+        context: SuggestionContext,
+        suggestion: String
+    ): String {
+        if (context.currentWord.isNotBlank()) {
+            return applyPrefixCase(context.currentWord, suggestion)
+        }
+        return if (context.startsNewSentence) {
+            suggestion.take(1).uppercase(currentLocale()) + suggestion.drop(1)
+        } else {
+            suggestion
+        }
     }
 
     private fun applyPrefixCase(prefix: String, suggestion: String): String {
@@ -528,7 +557,9 @@ class DaricKeyboardService : InputMethodService(),
     }
 
     private companion object {
-        const val MAX_CONTEXT_LENGTH = 64
+        const val MAX_CONTEXT_LENGTH = 256
+        const val SUGGESTION_SLOT_COUNT = 3
+        const val OPENING_PUNCTUATION = "([{'\"«"
         const val DELETE_REPEAT_START_DELAY_MS = 350L
         const val DELETE_REPEAT_INTERVAL_MS = 55L
         const val GIF_MIME_TYPE = "image/gif"
