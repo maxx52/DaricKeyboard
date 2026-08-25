@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
+import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -60,6 +61,8 @@ class DaricKeyboardService : InputMethodService(),
     private val englishLocale = Locale.ENGLISH
     private var editorInfo: EditorInfo? = null
     private var uiState by mutableStateOf(KeyboardUiState())
+    private var neuralSuggestionModel: LiteRtNextWordModel? = null
+    @Volatile private var serviceDestroyed = false
 
     private var gifClient: KlipyGifClient? = null
     private var gifRequestGeneration = 0
@@ -70,12 +73,35 @@ class DaricKeyboardService : InputMethodService(),
         savedStateController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         window?.window?.decorView?.let(::installViewTreeOwners)
+        serviceDestroyed = false
+        loadNeuralSuggestionModel()
     }
 
     private fun installViewTreeOwners(view: View) {
         view.setViewTreeLifecycleOwner(this)
         view.setViewTreeViewModelStoreOwner(this)
         view.setViewTreeSavedStateRegistryOwner(this)
+    }
+
+    private fun loadNeuralSuggestionModel() {
+        Thread({
+            val result = runCatching {
+                LiteRtNextWordModel.create(applicationContext)
+            }
+            deleteRepeatHandler.post {
+                if (serviceDestroyed) {
+                    result.getOrNull()?.close()
+                    return@post
+                }
+                result.onSuccess { model ->
+                    neuralSuggestionModel?.close()
+                    neuralSuggestionModel = model
+                    if (uiState.panel == KeyboardPanel.KEYS) updateSuggestions()
+                }.onFailure { error ->
+                    Log.w(LOG_TAG, "LiteRT suggestion model is unavailable", error)
+                }
+            }
+        }, "daric-neural-model-loader").start()
     }
 
     override fun onCreateInputView(): View {
@@ -161,7 +187,10 @@ class DaricKeyboardService : InputMethodService(),
     }
 
     override fun onDestroy() {
+        serviceDestroyed = true
         stopBackspaceRepeat()
+        neuralSuggestionModel?.close()
+        neuralSuggestionModel = null
         gifClient?.shutdown()
         gifClient = null
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
@@ -448,7 +477,13 @@ class DaricKeyboardService : InputMethodService(),
 
         val context = suggestionContext()
         val candidates = when (uiState.language) {
-            KeyboardLanguage.RUSSIAN -> RussianSuggestionEngine.suggest(context, limit = 3)
+            KeyboardLanguage.RUSSIAN -> RussianSuggestionEngine.suggest(
+                context = context,
+                limit = SUGGESTION_SLOT_COUNT,
+                neuralCandidates = neuralSuggestionModel
+                    ?.predictNext(context.previousWords, NEURAL_CANDIDATE_LIMIT)
+                    .orEmpty()
+            )
             KeyboardLanguage.ENGLISH -> emptyList()
         }.map { suggestion -> applySuggestionCase(context, suggestion) }
 
@@ -559,6 +594,8 @@ class DaricKeyboardService : InputMethodService(),
     private companion object {
         const val MAX_CONTEXT_LENGTH = 256
         const val SUGGESTION_SLOT_COUNT = 3
+        const val NEURAL_CANDIDATE_LIMIT = 6
+        const val LOG_TAG = "DaricKeyboard"
         const val OPENING_PUNCTUATION = "([{'\"«"
         const val DELETE_REPEAT_START_DELAY_MS = 350L
         const val DELETE_REPEAT_INTERVAL_MS = 55L

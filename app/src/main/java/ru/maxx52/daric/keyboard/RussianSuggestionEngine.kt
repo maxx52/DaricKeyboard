@@ -65,13 +65,25 @@ internal object RussianSuggestionEngine : SuggestionEngine {
     )
 
     override fun suggest(context: SuggestionContext, limit: Int): List<String> {
+        return suggest(context, limit, neuralCandidates = emptyList())
+    }
+
+    fun suggest(
+        context: SuggestionContext,
+        limit: Int,
+        neuralCandidates: List<String>
+    ): List<String> {
         if (limit <= 0) return emptyList()
 
         val prefix = context.currentWord.lowercase(russianLocale)
-        val contextual = contextModel.predictNext(
+        val ruleBasedCandidates = contextModel.predictNext(
             previousWords = context.previousWords,
             limit = limit * CONTEXT_CANDIDATE_MULTIPLIER
         )
+        val contextual = buildList {
+            addAll(neuralCandidates)
+            addAll(ruleBasedCandidates)
+        }.distinct()
 
         val candidates = if (prefix.isBlank()) {
             contextual.ifEmpty { sentenceStarters }
