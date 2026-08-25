@@ -82,11 +82,17 @@ private fun SetupScreen(
                 style = MaterialTheme.typography.bodyLarge
             )
             Spacer(Modifier.height(24.dp))
-            Button(Modifier.fillMaxWidth(), onClick = onEnableKeyboard) {
+            Button(
+                onClick = onEnableKeyboard,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("1. Включить клавиатуру")
             }
             Spacer(Modifier.height(10.dp))
-            OutlinedButton(Modifier.fillMaxWidth(), onClick = onChooseKeyboard) {
+            OutlinedButton(
+                onClick = onChooseKeyboard,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("2. Выбрать «Дарик»")
             }
             Spacer(Modifier.height(20.dp))
