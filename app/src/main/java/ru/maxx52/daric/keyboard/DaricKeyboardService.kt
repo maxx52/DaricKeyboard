@@ -68,13 +68,18 @@ class DaricKeyboardService : InputMethodService(),
         savedStateController.performAttach()
         savedStateController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
+        window?.window?.decorView?.let(::installViewTreeOwners)
+    }
+
+    private fun installViewTreeOwners(view: View) {
+        view.setViewTreeLifecycleOwner(this)
+        view.setViewTreeViewModelStoreOwner(this)
+        view.setViewTreeSavedStateRegistryOwner(this)
     }
 
     override fun onCreateInputView(): View {
         return ComposeView(this).apply {
-            setViewTreeLifecycleOwner(this@DaricKeyboardService)
-            setViewTreeViewModelStoreOwner(this@DaricKeyboardService)
-            setViewTreeSavedStateRegistryOwner(this@DaricKeyboardService)
+            installViewTreeOwners(this)
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 DaricTheme(darkTheme = false) {
