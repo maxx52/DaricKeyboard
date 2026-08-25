@@ -279,11 +279,7 @@ class DaricKeyboardService : InputMethodService(),
                 uiState = uiState.copy(
                     gifItems = emptyList(),
                     gifLoading = false,
-                    gifError = if (BuildConfig.KLIPY_API_KEY.isBlank()) {
-                        "Добавьте KLIPY_API_KEY в local.properties и пересоберите приложение"
-                    } else {
-                        "Не удалось загрузить GIF. Проверьте интернет и API-ключ"
-                    }
+                    gifError = "Не удалось загрузить GIF. Проверьте интернет и API-ключ"
                 )
             }
         }
