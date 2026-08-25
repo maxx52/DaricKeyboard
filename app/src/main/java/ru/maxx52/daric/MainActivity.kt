@@ -1,6 +1,7 @@
 package ru.maxx52.daric
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.view.inputmethod.InputMethodManager
@@ -45,10 +46,20 @@ class MainActivity : ComponentActivity() {
                     },
                     onChooseKeyboard = {
                         getSystemService(InputMethodManager::class.java).showInputMethodPicker()
+                    },
+                    onOpenPrivacy = {
+                        startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL))
+                        )
                     }
                 )
             }
         }
+    }
+
+    private companion object {
+        const val PRIVACY_POLICY_URL =
+            "https://github.com/maxx52/DaricKeyboard/blob/master/PRIVACY.md"
     }
 }
 
@@ -58,7 +69,8 @@ private fun SetupScreen(
     onSettingsChange: (KeyboardSettings) -> Unit,
     onClearHistory: () -> Unit,
     onEnableKeyboard: () -> Unit,
-    onChooseKeyboard: () -> Unit
+    onChooseKeyboard: () -> Unit,
+    onOpenPrivacy: () -> Unit
 ) {
     var testText by rememberSaveable { mutableStateOf("") }
     var historyCleared by rememberSaveable { mutableStateOf(false) }
@@ -241,7 +253,11 @@ private fun SetupScreen(
                     }
                 }
             }
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(10.dp))
+            TextButton(onClick = onOpenPrivacy) {
+                Text("Политика конфиденциальности")
+            }
+            Spacer(Modifier.height(10.dp))
             Text(
                 "Настройки применятся при следующем открытии клавиатуры. " +
                     "Введённый текст не передаётся в интернет; сеть используется только для GIF.",

@@ -12,9 +12,34 @@ val localProperties = Properties().apply {
     }
 }
 
-val klipyApiKey = localProperties.getProperty("KLIPY_API_KEY", "")
+val klipyApiKey = (
+    System.getenv("KLIPY_API_KEY")
+        ?: localProperties.getProperty("KLIPY_API_KEY", "")
+)
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
+
+val keystoreProperties = Properties().apply {
+    val propertiesFile = rootProject.file("keystore.properties")
+    if (propertiesFile.exists()) {
+        propertiesFile.inputStream().use { load(it) }
+    }
+}
+
+fun releaseSetting(propertyName: String, environmentName: String): String? =
+    System.getenv(environmentName)?.takeIf(String::isNotBlank)
+        ?: keystoreProperties.getProperty(propertyName)?.takeIf(String::isNotBlank)
+
+val releaseStoreFile = releaseSetting("storeFile", "DARIC_STORE_FILE")
+val releaseStorePassword = releaseSetting("storePassword", "DARIC_STORE_PASSWORD")
+val releaseKeyAlias = releaseSetting("keyAlias", "DARIC_KEY_ALIAS")
+val releaseKeyPassword = releaseSetting("keyPassword", "DARIC_KEY_PASSWORD")
+val releaseSigningAvailable = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
 
 android {
     namespace = "ru.maxx52.daric"
@@ -35,8 +60,20 @@ android {
         buildConfigField("String", "KLIPY_API_KEY", "\"$klipyApiKey\"")
     }
 
+    signingConfigs {
+        if (releaseSigningAvailable) {
+            create("release") {
+                storeFile = rootProject.file(requireNotNull(releaseStoreFile))
+                storePassword = requireNotNull(releaseStorePassword)
+                keyAlias = requireNotNull(releaseKeyAlias)
+                keyPassword = requireNotNull(releaseKeyPassword)
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -52,6 +89,37 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+}
+
+val validateRuStoreRelease by tasks.registering {
+    group = "verification"
+    description = "Checks signing and API credentials required for a RuStore release"
+    doLast {
+        val missing = buildList {
+            if (releaseStoreFile.isNullOrBlank()) add("storeFile / DARIC_STORE_FILE")
+            if (releaseStorePassword.isNullOrBlank()) {
+                add("storePassword / DARIC_STORE_PASSWORD")
+            }
+            if (releaseKeyAlias.isNullOrBlank()) add("keyAlias / DARIC_KEY_ALIAS")
+            if (releaseKeyPassword.isNullOrBlank()) add("keyPassword / DARIC_KEY_PASSWORD")
+        }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "Release signing is not configured: " + missing.joinToString()
+            )
+        }
+        if (klipyApiKey.isBlank()) {
+            throw GradleException(
+                "KLIPY_API_KEY is empty. A working production key is required for RuStore."
+            )
+        }
+    }
+}
+
+tasks.matching {
+    it.name == "assembleRelease" || it.name == "bundleRelease"
+}.configureEach {
+    dependsOn(validateRuStoreRelease)
 }
 
 dependencies {
