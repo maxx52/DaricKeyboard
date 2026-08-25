@@ -3,4 +3,7 @@
     <cache-path
         name="shared_gifs"
         path="shared_gifs/" />
+    <cache-path
+        name="shared_postcards"
+        path="shared_postcards/" />
 </paths>

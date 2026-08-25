@@ -1,13 +1,16 @@
 package ru.maxx52.daric.keyboard
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,17 +19,25 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -38,6 +49,7 @@ internal fun KeyboardScreen(
     onKey: (String) -> Unit,
     onSuggestion: (String) -> Unit,
     onOpenGif: () -> Unit,
+    onOpenPostcards: () -> Unit,
     onCloseGif: () -> Unit,
     onOpenGifSearch: () -> Unit,
     onCloseGifSearch: () -> Unit,
@@ -45,6 +57,8 @@ internal fun KeyboardScreen(
     onRunGifSearch: () -> Unit,
     onRetryGif: () -> Unit,
     onGifSelected: (KlipyGif) -> Unit,
+    onClosePostcards: () -> Unit,
+    onPostcardSelected: (Postcard) -> Unit,
     onBackspacePressStart: () -> Unit,
     onBackspacePressEnd: (released: Boolean) -> Unit
 ) {
@@ -60,7 +74,10 @@ internal fun KeyboardScreen(
         ) {
             when (state.panel) {
                 KeyboardPanel.KEYS -> {
-                    MediaToolbar(onOpenGif)
+                    MediaToolbar(
+                        onOpenGif = onOpenGif,
+                        onOpenPostcards = onOpenPostcards
+                    )
                     if (state.suggestionsVisible) {
                         SuggestionBar(state.suggestions, onSuggestion)
                     }
@@ -92,13 +109,20 @@ internal fun KeyboardScreen(
                         onBackspacePressEnd = onBackspacePressEnd
                     )
                 }
+                KeyboardPanel.POSTCARDS -> PostcardPanel(
+                    onClose = onClosePostcards,
+                    onPostcardSelected = onPostcardSelected
+                )
             }
         }
     }
 }
 
 @Composable
-private fun MediaToolbar(onOpenGif: () -> Unit) {
+private fun MediaToolbar(
+    onOpenGif: () -> Unit,
+    onOpenPostcards: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -109,6 +133,12 @@ private fun MediaToolbar(onOpenGif: () -> Unit) {
             label = "GIF",
             modifier = Modifier.width(68.dp),
             onClick = onOpenGif
+        )
+        Spacer(Modifier.width(6.dp))
+        SmallAction(
+            label = "Открытки",
+            modifier = Modifier.width(104.dp),
+            onClick = onOpenPostcards
         )
     }
 }
@@ -270,6 +300,142 @@ private fun RowScope.KeyboardKey(
                 },
                 textAlign = TextAlign.Center,
                 maxLines = 1
+            )
+        }
+    }
+}
+
+
+@Composable
+private fun PostcardPanel(
+    onClose: () -> Unit,
+    onPostcardSelected: (Postcard) -> Unit
+) {
+    var selectedCategory by rememberSaveable {
+        mutableStateOf(PostcardCategory.ALL)
+    }
+    val visiblePostcards = remember(selectedCategory) {
+        if (selectedCategory == PostcardCategory.ALL) {
+            postcardCatalog
+        } else {
+            postcardCatalog.filter { it.category == selectedCategory }
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(44.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SmallAction("⌨", Modifier.width(48.dp), onClose)
+        Text(
+            text = "Открытки",
+            modifier = Modifier.weight(1f),
+            fontSize = 17.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.width(48.dp))
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(42.dp)
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 3.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        PostcardCategory.entries.forEach { category ->
+            val selected = category == selectedCategory
+            Surface(
+                modifier = Modifier
+                    .height(34.dp)
+                    .padding(end = 6.dp)
+                    .clickable { selectedCategory = category },
+                shape = RoundedCornerShape(17.dp),
+                color = if (selected) KeyTextColor else SuggestionBackground,
+                border = BorderStroke(1.dp, if (selected) KeyTextColor else KeyStroke),
+                contentColor = if (selected) Color.White else KeyTextColor
+            ) {
+                Box(
+                    modifier = Modifier.padding(horizontal = 13.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(category.label, fontSize = 13.sp, maxLines = 1)
+                }
+            }
+        }
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(PostcardGridHeight),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(3.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        items(visiblePostcards, key = { it.id }) { postcard ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(124.dp)
+                    .clickable { onPostcardSelected(postcard) },
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, KeyStroke)
+            ) {
+                PostcardPreview(postcard, Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
+@Composable
+private fun PostcardPreview(
+    postcard: Postcard,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        Color(postcard.startColor),
+                        Color(postcard.endColor)
+                    )
+                )
+            )
+            .padding(10.dp)
+    ) {
+        Text(
+            text = postcard.decoration,
+            modifier = Modifier.align(Alignment.TopEnd),
+            fontSize = 28.sp
+        )
+        Column(
+            modifier = Modifier.align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = postcard.title,
+                color = Color(postcard.textColor),
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = 19.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2
+            )
+            Text(
+                text = postcard.message,
+                modifier = Modifier.padding(top = 5.dp),
+                color = Color(postcard.textColor).copy(alpha = 0.9f),
+                fontSize = 11.sp,
+                lineHeight = 13.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 3
             )
         }
     }
@@ -464,3 +630,4 @@ private val KeyTextColor = Color(0xFF241F2E)
 private val HintColor = Color(0xFF776B84)
 private val GifPlaceholder = Color(0xFFE1DBEB)
 private val GifGridHeight = 286.dp
+private val PostcardGridHeight = 260.dp

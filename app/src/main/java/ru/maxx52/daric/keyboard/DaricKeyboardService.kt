@@ -1,6 +1,7 @@
 package ru.maxx52.daric.keyboard
 
 import android.content.ClipDescription
+import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
@@ -88,6 +89,7 @@ class DaricKeyboardService : InputMethodService(),
                         onKey = ::handleKey,
                         onSuggestion = ::applySuggestion,
                         onOpenGif = ::openGifPanel,
+                        onOpenPostcards = ::openPostcards,
                         onCloseGif = ::closeGifPanel,
                         onOpenGifSearch = ::openGifSearch,
                         onCloseGifSearch = ::closeGifSearch,
@@ -102,6 +104,8 @@ class DaricKeyboardService : InputMethodService(),
                             loadGifs(uiState.gifQuery.takeIf(String::isNotBlank))
                         },
                         onGifSelected = ::sendGif,
+                        onClosePostcards = ::closePostcards,
+                        onPostcardSelected = ::sendPostcard,
                         onBackspacePressStart = ::startBackspaceRepeat,
                         onBackspacePressEnd = ::finishBackspaceRepeat
                     )
@@ -163,6 +167,15 @@ class DaricKeyboardService : InputMethodService(),
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         viewModelStore.clear()
         super.onDestroy()
+    }
+
+    private fun openPostcards() {
+        uiState = uiState.copy(panel = KeyboardPanel.POSTCARDS)
+    }
+
+    private fun closePostcards() {
+        uiState = uiState.copy(panel = KeyboardPanel.KEYS)
+        updateSuggestions()
     }
 
     private fun openGifPanel() {
@@ -253,6 +266,70 @@ class DaricKeyboardService : InputMethodService(),
                 Toast.LENGTH_LONG
             ).show()
         }
+    }
+
+
+    private fun sendPostcard(postcard: Postcard) {
+        if (currentInputConnection == null) return
+        Toast.makeText(this, "Готовлю открытку…", Toast.LENGTH_SHORT).show()
+
+        Thread({
+            val result = runCatching {
+                PostcardRenderer.renderToFile(
+                    postcard = postcard,
+                    directory = File(cacheDir, "shared_postcards")
+                )
+            }
+            deleteRepeatHandler.post {
+                result.onSuccess { file -> commitPostcard(postcard, file) }
+                    .onFailure {
+                        Toast.makeText(
+                            this,
+                            "Не удалось создать открытку",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+            }
+        }, "postcard-renderer").start()
+    }
+
+    private fun commitPostcard(postcard: Postcard, file: File) {
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val inputConnection = currentInputConnection
+        val contentInfo = InputContentInfo(
+            uri,
+            ClipDescription(postcard.title, arrayOf(PNG_MIME_TYPE)),
+            null
+        )
+        val committed = inputConnection != null && runCatching {
+            inputConnection.commitContent(
+                contentInfo,
+                InputConnection.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
+                null
+            )
+        }.getOrDefault(false)
+
+        if (committed) {
+            Toast.makeText(this, "Открытка отправлена", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = PNG_MIME_TYPE
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val chooser = Intent.createChooser(sendIntent, "Отправить открытку").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { startActivity(chooser) }
+            .onFailure {
+                Toast.makeText(
+                    this,
+                    "Это приложение не принимает изображения",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
     }
 
     private fun gifClient(): KlipyGifClient {
@@ -455,6 +532,7 @@ class DaricKeyboardService : InputMethodService(),
         const val DELETE_REPEAT_START_DELAY_MS = 350L
         const val DELETE_REPEAT_INTERVAL_MS = 55L
         const val GIF_MIME_TYPE = "image/gif"
+        const val PNG_MIME_TYPE = "image/png"
         val emptySuggestions = listOf("", "", "")
 
         val blockedSuggestionVariations = setOf(
