@@ -62,6 +62,7 @@ class DaricKeyboardService : InputMethodService(),
     private var editorInfo: EditorInfo? = null
     private var uiState by mutableStateOf(KeyboardUiState())
     private var neuralSuggestionModel: LiteRtNextWordModel? = null
+    private lateinit var personalSuggestionStore: PersonalSuggestionStore
     @Volatile private var serviceDestroyed = false
 
     private var gifClient: KlipyGifClient? = null
@@ -74,6 +75,7 @@ class DaricKeyboardService : InputMethodService(),
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         window?.window?.decorView?.let(::installViewTreeOwners)
         serviceDestroyed = false
+        personalSuggestionStore = PersonalSuggestionStore(applicationContext)
         loadNeuralSuggestionModel()
     }
 
@@ -389,9 +391,18 @@ class DaricKeyboardService : InputMethodService(),
                 uppercase = false
             )
             "⌫" -> deleteOneCharacter()
-            "пробел", "space" -> inputConnection.commitText(" ", 1)
-            "↵" -> handleEnter()
+            "пробел", "space" -> {
+                learnCurrentWord()
+                inputConnection.commitText(" ", 1)
+            }
+            "↵" -> {
+                learnCurrentWord()
+                handleEnter()
+            }
             else -> {
+                if (key.length == 1 && key.first() in WORD_TERMINATORS) {
+                    learnCurrentWord()
+                }
                 inputConnection.commitText(uiState.displayText(key), 1)
                 if (uiState.uppercase && key.length == 1 && key.first().isLetter()) {
                     uiState = uiState.copy(uppercase = false)
@@ -482,7 +493,15 @@ class DaricKeyboardService : InputMethodService(),
                 limit = SUGGESTION_SLOT_COUNT,
                 neuralCandidates = neuralSuggestionModel
                     ?.predictNext(context.previousWords, NEURAL_CANDIDATE_LIMIT)
-                    .orEmpty()
+                    .orEmpty(),
+                personalizedCandidates = if (personalizedLearningAllowed()) {
+                    personalSuggestionStore.predictNext(
+                        context.previousWords,
+                        PERSONAL_CANDIDATE_LIMIT
+                    )
+                } else {
+                    emptyList()
+                }
             )
             KeyboardLanguage.ENGLISH -> emptyList()
         }.map { suggestion -> applySuggestionCase(context, suggestion) }
@@ -515,6 +534,9 @@ class DaricKeyboardService : InputMethodService(),
         if (suggestion.isBlank()) return
         val inputConnection = currentInputConnection ?: return
         val context = suggestionContext()
+        if (personalizedLearningAllowed()) {
+            personalSuggestionStore.learn(context.previousWords, suggestion)
+        }
 
         inputConnection.beginBatchEdit()
         try {
@@ -581,6 +603,20 @@ class DaricKeyboardService : InputMethodService(),
         return (inputType and InputType.TYPE_MASK_VARIATION) !in blockedSuggestionVariations
     }
 
+    private fun personalizedLearningAllowed(): Boolean {
+        if (uiState.language != KeyboardLanguage.RUSSIAN || !suggestionsAllowed()) return false
+        val imeOptions = editorInfo?.imeOptions ?: return false
+        return (imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) == 0
+    }
+
+    private fun learnCurrentWord() {
+        if (!personalizedLearningAllowed()) return
+        val context = suggestionContext()
+        if (context.currentWord.isNotBlank()) {
+            personalSuggestionStore.learn(context.previousWords, context.currentWord)
+        }
+    }
+
     private fun handleEnter() {
         val action = editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
             ?: EditorInfo.IME_ACTION_NONE
@@ -595,6 +631,8 @@ class DaricKeyboardService : InputMethodService(),
         const val MAX_CONTEXT_LENGTH = 256
         const val SUGGESTION_SLOT_COUNT = 3
         const val NEURAL_CANDIDATE_LIMIT = 6
+        const val PERSONAL_CANDIDATE_LIMIT = 6
+        val WORD_TERMINATORS = setOf('.', ',', '!', '?', ';', ':')
         const val LOG_TAG = "DaricKeyboard"
         const val OPENING_PUNCTUATION = "([{'\"«"
         const val DELETE_REPEAT_START_DELAY_MS = 350L

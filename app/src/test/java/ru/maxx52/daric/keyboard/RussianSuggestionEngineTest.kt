@@ -66,6 +66,18 @@ class RussianSuggestionEngineTest {
     }
 
     @Test
+    fun personalizedCandidatesAreRankedBeforeNeuralCandidates() {
+        val suggestions = RussianSuggestionEngine.suggest(
+            context = SuggestionContextParser.parse("давай "),
+            limit = 3,
+            neuralCandidates = listOf("проверим"),
+            personalizedCandidates = listOf("продолжим")
+        )
+
+        assertEquals(listOf("продолжим", "проверим", "сделаем"), suggestions)
+    }
+
+    @Test
     fun detectsBeginningOfANewSentence() {
         assertTrue(SuggestionContextParser.parse("Всё хорошо. ").startsNewSentence)
     }

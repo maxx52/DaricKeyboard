@@ -71,7 +71,8 @@ internal object RussianSuggestionEngine : SuggestionEngine {
     fun suggest(
         context: SuggestionContext,
         limit: Int,
-        neuralCandidates: List<String>
+        neuralCandidates: List<String>,
+        personalizedCandidates: List<String> = emptyList()
     ): List<String> {
         if (limit <= 0) return emptyList()
 
@@ -81,6 +82,7 @@ internal object RussianSuggestionEngine : SuggestionEngine {
             limit = limit * CONTEXT_CANDIDATE_MULTIPLIER
         )
         val contextual = buildList {
+            addAll(personalizedCandidates)
             addAll(neuralCandidates)
             addAll(ruleBasedCandidates)
         }.distinct()
