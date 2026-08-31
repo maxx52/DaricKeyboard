@@ -2,6 +2,7 @@ package ru.maxx52.daric.keyboard
 
 import android.content.ClipDescription
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.inputmethodservice.InputMethodService
 import android.icu.text.BreakIterator
@@ -33,7 +34,6 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import ru.maxx52.daric.R
 import ru.maxx52.daric.settings.KeyboardSettings
 import ru.maxx52.daric.settings.KeyboardSettingsStore
 import ru.maxx52.daric.ui.theme.DaricTheme
@@ -403,12 +403,24 @@ class DaricKeyboardService : InputMethodService(),
 
     private fun gifClient(): KlipyGifClient {
         return gifClient ?: KlipyGifClient(
-            apiKey = getString(R.string.klipy_api_key),
+            apiKey = klipyApiKey(),
             customerId = Settings.Secure.getString(
                 contentResolver,
                 Settings.Secure.ANDROID_ID
             ).orEmpty().ifBlank { packageName }
         ).also { gifClient = it }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun klipyApiKey(): String {
+        return runCatching {
+            packageManager
+                .getApplicationInfo(packageName, PackageManager.GET_META_DATA)
+                .metaData
+                ?.getString(KLIPY_API_KEY_METADATA)
+                .orEmpty()
+                .removePrefix(KLIPY_API_KEY_PREFIX)
+        }.getOrDefault("")
     }
 
     private fun handleKey(key: String) {
@@ -771,6 +783,8 @@ class DaricKeyboardService : InputMethodService(),
         const val PERSONAL_CANDIDATE_LIMIT = 6
         val WORD_TERMINATORS = setOf('.', ',', '!', '?', ';', ':', '…')
         const val LOG_TAG = "DaricKeyboard"
+        const val KLIPY_API_KEY_METADATA = "ru.maxx52.daric.KLIPY_API_KEY"
+        const val KLIPY_API_KEY_PREFIX = "key:"
         const val SOUND_EFFECT_VOLUME = 0.25f
         const val OPENING_PUNCTUATION = "([{'\"«"
         const val DELETE_REPEAT_START_DELAY_MS = 350L

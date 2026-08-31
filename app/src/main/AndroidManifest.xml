@@ -11,6 +11,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.DaricKeyboard">
 
+        <meta-data
+            android:name="ru.maxx52.daric.KLIPY_API_KEY"
+            android:value="key:${klipyApiKey}" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

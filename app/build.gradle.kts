@@ -55,7 +55,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        resValue("string", "klipy_api_key", klipyApiKey)
+        manifestPlaceholders["klipyApiKey"] = klipyApiKey
     }
 
     signingConfigs {
