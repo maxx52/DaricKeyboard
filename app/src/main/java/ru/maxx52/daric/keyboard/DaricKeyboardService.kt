@@ -71,6 +71,7 @@ class DaricKeyboardService : InputMethodService(),
     private lateinit var settingsStore: KeyboardSettingsStore
     private var keyboardSettings = KeyboardSettings()
     private var inputComposeView: View? = null
+    private var capitalizationManuallyOverridden = false
     @Volatile private var serviceDestroyed = false
 
     private var gifClient: KlipyGifClient? = null
@@ -160,6 +161,7 @@ class DaricKeyboardService : InputMethodService(),
         super.onStartInputView(info, restarting)
         editorInfo = info
         refreshKeyboardSettings()
+        capitalizationManuallyOverridden = false
         uiState = uiState.copy(
             mode = when (info?.inputType?.and(InputType.TYPE_MASK_CLASS)) {
                 InputType.TYPE_CLASS_NUMBER,
@@ -168,7 +170,7 @@ class DaricKeyboardService : InputMethodService(),
                 else -> KeyboardMode.LETTERS
             },
             panel = KeyboardPanel.KEYS,
-            uppercase = false,
+            uppercase = shouldAutoCapitalize(),
             suggestionsVisible = suggestionsAllowed(),
             suggestions = emptySuggestions
         )
@@ -200,7 +202,10 @@ class DaricKeyboardService : InputMethodService(),
             candidatesStart,
             candidatesEnd
         )
-        if (uiState.panel == KeyboardPanel.KEYS) updateSuggestions()
+        if (uiState.panel == KeyboardPanel.KEYS) {
+            updateAutoCapitalization()
+            updateSuggestions()
+        }
     }
 
     override fun onDestroy() {
@@ -222,6 +227,7 @@ class DaricKeyboardService : InputMethodService(),
 
     private fun closePostcards() {
         uiState = uiState.copy(panel = KeyboardPanel.KEYS)
+        updateAutoCapitalization()
         updateSuggestions()
     }
 
@@ -231,6 +237,7 @@ class DaricKeyboardService : InputMethodService(),
 
     private fun closeEmojiPanel() {
         uiState = uiState.copy(panel = KeyboardPanel.KEYS)
+        updateAutoCapitalization()
         updateSuggestions()
     }
 
@@ -238,6 +245,8 @@ class DaricKeyboardService : InputMethodService(),
         if (emoji.isBlank()) return
         learnCurrentWord()
         currentInputConnection?.commitText(emoji, 1)
+        capitalizationManuallyOverridden = false
+        updateAutoCapitalization()
         updateSuggestions()
     }
 
@@ -248,6 +257,7 @@ class DaricKeyboardService : InputMethodService(),
 
     private fun closeGifPanel() {
         uiState = uiState.copy(panel = KeyboardPanel.KEYS)
+        updateAutoCapitalization()
         updateSuggestions()
     }
 
@@ -410,19 +420,22 @@ class DaricKeyboardService : InputMethodService(),
         val inputConnection = currentInputConnection ?: return
 
         when (key) {
-            "⇧" -> uiState = uiState.copy(uppercase = !uiState.uppercase)
+            "⇧" -> {
+                capitalizationManuallyOverridden = true
+                uiState = uiState.copy(uppercase = !uiState.uppercase)
+            }
             "?123" -> uiState = uiState.copy(mode = KeyboardMode.SYMBOLS)
             "АБВ", "ABC" -> uiState = uiState.copy(mode = KeyboardMode.LETTERS)
             "🌐" -> uiState = uiState.copy(
                 language = if (uiState.language == KeyboardLanguage.RUSSIAN) {
                     KeyboardLanguage.ENGLISH
-                } else KeyboardLanguage.RUSSIAN,
-                uppercase = false
+                } else KeyboardLanguage.RUSSIAN
             )
             "⌫" -> deleteOneCharacter()
             "пробел", "space" -> {
                 learnCurrentWord()
                 inputConnection.commitText(" ", 1)
+                updateAutoCapitalization()
             }
             "↵" -> {
                 learnCurrentWord()
@@ -432,9 +445,14 @@ class DaricKeyboardService : InputMethodService(),
                 if (key.length == 1 && key.first() in WORD_TERMINATORS) {
                     learnCurrentWord()
                 }
-                inputConnection.commitText(uiState.displayText(key), 1)
-                if (uiState.uppercase && key.length == 1 && key.first().isLetter()) {
-                    uiState = uiState.copy(uppercase = false)
+                val displayedText = uiState.displayText(key)
+                commitTextWithPunctuationSpacing(inputConnection, displayedText)
+                if (key.length == 1 && key.first().isLetter()) {
+                    capitalizationManuallyOverridden = false
+                    if (uiState.uppercase) uiState = uiState.copy(uppercase = false)
+                } else if (displayedText.length == 1) {
+                    capitalizationManuallyOverridden = false
+                    updateAutoCapitalization()
                 }
             }
         }
@@ -513,8 +531,58 @@ class DaricKeyboardService : InputMethodService(),
                 }
             }
             inputConnection.deleteSurroundingTextInCodePoints(codePointCount, 0)
+            capitalizationManuallyOverridden = false
+            updateAutoCapitalization()
             updateSuggestions()
         }
+    }
+
+    private fun commitTextWithPunctuationSpacing(
+        inputConnection: InputConnection,
+        text: String
+    ) {
+        val punctuation = text.singleOrNull()
+        if (punctuation == null || !TextInputRules.removesLeadingSpace(punctuation)) {
+            inputConnection.commitText(text, 1)
+            return
+        }
+
+        val textBeforeCursor = inputConnection
+            .getTextBeforeCursor(MAX_CONTEXT_LENGTH, 0)
+            ?.toString()
+            .orEmpty()
+        val spacesToDelete = TextInputRules.spacesToDeleteBeforePunctuation(
+            textBeforeCursor = textBeforeCursor,
+            punctuation = punctuation
+        )
+
+        if (spacesToDelete == 0) {
+            inputConnection.commitText(text, 1)
+            return
+        }
+
+        inputConnection.beginBatchEdit()
+        try {
+            if (spacesToDelete > 0) {
+                inputConnection.deleteSurroundingTextInCodePoints(spacesToDelete, 0)
+            }
+            inputConnection.commitText(text, 1)
+        } finally {
+            inputConnection.endBatchEdit()
+        }
+    }
+
+    private fun shouldAutoCapitalize(): Boolean {
+        val textBeforeCursor = currentInputConnection
+            ?.getTextBeforeCursor(MAX_CONTEXT_LENGTH, 0)
+            ?.toString()
+            .orEmpty()
+        return TextInputRules.shouldCapitalize(textBeforeCursor)
+    }
+
+    private fun updateAutoCapitalization() {
+        if (capitalizationManuallyOverridden) return
+        uiState = uiState.copy(uppercase = shouldAutoCapitalize())
     }
 
     private fun deleteGifQueryCharacter() {
@@ -607,6 +675,8 @@ class DaricKeyboardService : InputMethodService(),
         } finally {
             inputConnection.endBatchEdit()
         }
+        capitalizationManuallyOverridden = false
+        updateAutoCapitalization()
         updateSuggestions()
     }
 
@@ -688,13 +758,9 @@ class DaricKeyboardService : InputMethodService(),
     }
 
     private fun handleEnter() {
-        val action = editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
-            ?: EditorInfo.IME_ACTION_NONE
-        if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
-            currentInputConnection?.performEditorAction(action)
-        } else {
-            currentInputConnection?.commitText("\n", 1)
-        }
+        currentInputConnection?.commitText("\n", 1)
+        capitalizationManuallyOverridden = false
+        updateAutoCapitalization()
     }
 
     private companion object {

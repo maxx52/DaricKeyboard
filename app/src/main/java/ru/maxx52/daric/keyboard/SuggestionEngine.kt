@@ -8,8 +8,7 @@ internal data class SuggestionContext(
     val startsNewSentence: Boolean
         get() {
             val textBeforeCurrentWord = textBeforeCursor.dropLast(currentWord.length)
-            val lastMeaningfulCharacter = textBeforeCurrentWord.trimEnd().lastOrNull()
-            return lastMeaningfulCharacter == null || lastMeaningfulCharacter in ".!?"
+            return TextInputRules.shouldCapitalize(textBeforeCurrentWord)
         }
 }
 
