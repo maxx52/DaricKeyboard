@@ -33,7 +33,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import ru.maxx52.daric.BuildConfig
+import ru.maxx52.daric.R
 import ru.maxx52.daric.settings.KeyboardSettings
 import ru.maxx52.daric.settings.KeyboardSettingsStore
 import ru.maxx52.daric.ui.theme.DaricTheme
@@ -403,7 +403,7 @@ class DaricKeyboardService : InputMethodService(),
 
     private fun gifClient(): KlipyGifClient {
         return gifClient ?: KlipyGifClient(
-            apiKey = BuildConfig.KLIPY_API_KEY,
+            apiKey = getString(R.string.klipy_api_key),
             customerId = Settings.Secure.getString(
                 contentResolver,
                 Settings.Secure.ANDROID_ID

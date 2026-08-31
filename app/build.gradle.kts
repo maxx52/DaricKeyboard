@@ -16,8 +16,6 @@ val klipyApiKey = (
     System.getenv("KLIPY_API_KEY")
         ?: localProperties.getProperty("KLIPY_API_KEY", "")
 )
-    .replace("\\", "\\\\")
-    .replace("\"", "\\\"")
 
 val keystoreProperties = Properties().apply {
     val propertiesFile = rootProject.file("keystore.properties")
@@ -57,7 +55,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "KLIPY_API_KEY", "\"$klipyApiKey\"")
+        resValue("string", "klipy_api_key", klipyApiKey)
     }
 
     signingConfigs {
@@ -82,7 +80,6 @@ android {
         }
     }
     buildFeatures {
-        buildConfig = true
         compose = true
     }
     compileOptions {
